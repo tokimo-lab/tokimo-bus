@@ -1,0 +1,21 @@
+[package]
+name        = "tokimo-bus-client"
+description = "App-side SDK for tokimo-bus: connect, register methods, invoke, pub/sub, auto-reconnect."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+tokimo-bus-protocol = { workspace = true }
+tokio               = { workspace = true }
+serde               = { workspace = true }
+rmp-serde           = { workspace = true }
+tracing             = { workspace = true }
+thiserror           = { workspace = true }
+parking_lot         = { workspace = true }
+dashmap             = { workspace = true }
+futures             = { workspace = true }
+async-trait         = { workspace = true }

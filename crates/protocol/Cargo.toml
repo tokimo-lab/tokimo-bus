@@ -1,0 +1,15 @@
+[package]
+name        = "tokimo-bus-protocol"
+description = "Wire types and length-prefixed rmp-serde frame codec for tokimo-bus."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+tokio       = { workspace = true }
+serde       = { workspace = true }
+rmp-serde   = { workspace = true }
+thiserror   = { workspace = true }

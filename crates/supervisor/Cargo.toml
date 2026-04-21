@@ -1,0 +1,18 @@
+[package]
+name        = "tokimo-bus-supervisor"
+description = "procd-equivalent process supervisor for tokimo-bus: spawn, idle-exit, crash respawn with backoff."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+tokimo-bus-protocol = { workspace = true }
+tokimo-bus-broker   = { workspace = true }
+tokio               = { workspace = true }
+tracing             = { workspace = true }
+thiserror           = { workspace = true }
+parking_lot         = { workspace = true }
+dashmap             = { workspace = true }
