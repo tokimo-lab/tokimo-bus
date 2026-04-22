@@ -288,7 +288,11 @@ async fn handle_inbound(client: &Arc<BusClient>, frame: BusFrame) {
         }
         BusFrame::Invoke(inv) => {
             client.record_activity();
-            dispatch_invoke(client.clone(), inv).await;
+            // IMPORTANT: spawn so the inbound reader keeps draining frames.
+            // Handlers may themselves call `client.invoke(...)`, whose Response
+            // arrives via this same inbound loop — awaiting here would deadlock.
+            let c = client.clone();
+            tokio::spawn(async move { dispatch_invoke(c, inv).await });
         }
         BusFrame::Response(resp) => {
             if let Some((_, tx)) = client.pending.remove(&resp.req_id) {

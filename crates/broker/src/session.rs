@@ -146,11 +146,39 @@ where
             Ok(Some(BusFrame::Unsubscribe { topic_prefix })) => {
                 broker.unsubscribe(&hello.service, &topic_prefix);
             }
-            Ok(Some(BusFrame::Invoke(_))) => {
-                // App-to-app calls go through tx (routed by broker.call()).
-                // If an app sends Invoke directly, broker doesn't forward it
-                // in this minimal build — future work.
-                warn!("bus-broker: app-originated Invoke not yet routed");
+            Ok(Some(BusFrame::Invoke(inv))) => {
+                // App-originated call: parse `service.method`, route via broker, reply to caller.
+                let broker = Arc::clone(&broker);
+                let tx = tx.clone();
+                let originator = hello.service.clone();
+                tokio::spawn(async move {
+                    let (target_service, target_method) = match inv.method.split_once('.') {
+                        Some((s, m)) => (s.to_string(), m.to_string()),
+                        None => {
+                            let _ = tx.send(BusFrame::Response(Response {
+                                req_id: inv.req_id,
+                                result: Err(BusError::BadRequest(format!(
+                                    "invoke method must be `service.method`, got `{}`",
+                                    inv.method
+                                ))),
+                            }));
+                            return;
+                        }
+                    };
+                    let result = broker
+                        .call(&target_service, &target_method, inv.payload, inv.caller)
+                        .await;
+                    debug!(
+                        from = %originator,
+                        target = %format!("{target_service}.{target_method}"),
+                        ok = result.is_ok(),
+                        "bus-broker: app-originated invoke routed",
+                    );
+                    let _ = tx.send(BusFrame::Response(Response {
+                        req_id: inv.req_id,
+                        result,
+                    }));
+                });
             }
             Ok(Some(other)) => {
                 debug!(?other, "bus-broker: ignoring frame");
