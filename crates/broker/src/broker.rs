@@ -2,7 +2,9 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     path::Path,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -18,6 +20,21 @@ use tracing::{info, warn};
 use tokimo_bus_protocol::{
     BusError, BusFrame, CallerCtx, Event, Invoke, Response,
 };
+
+/// Future returned by a [`LocalServiceHandler`].
+pub type LocalCallFuture =
+    Pin<Box<dyn Future<Output = Result<Vec<u8>, BusError>> + Send + 'static>>;
+
+/// In-process handler for a "virtual" service that lives inside the broker
+/// host (e.g. tokimo-server) instead of a separate process.
+///
+/// Used as a transitional bridge while individual apps are still being
+/// extracted into their own binaries: an app can already call
+/// `bus.call("notification_center", "notify", ...)` even though
+/// `notification_center` is still part of the main server.
+pub type LocalServiceHandler = Arc<
+    dyn Fn(String, Vec<u8>, CallerCtx) -> LocalCallFuture + Send + Sync,
+>;
 
 use crate::registry::Registry;
 
@@ -51,6 +68,11 @@ pub struct Broker {
     sessions: DashMap<(String, u64), SessionHandle>,
     /// Topic-prefix subscriptions: subscriber_service → set of prefixes.
     subscriptions: Mutex<HashMap<String, HashSet<String>>>,
+    /// In-process "virtual" services. Looked up before the session registry,
+    /// so the broker host (e.g. tokimo-server) can expose its own handlers
+    /// under a service name and let connected apps call them via the normal
+    /// `bus.call(service, method, …)` protocol.
+    local_services: DashMap<String, LocalServiceHandler>,
 }
 
 #[derive(Clone)]
@@ -70,6 +92,7 @@ impl Broker {
             tokens: DashMap::new(),
             sessions: DashMap::new(),
             subscriptions: Mutex::new(HashMap::new()),
+            local_services: DashMap::new(),
         })
     }
 
@@ -136,6 +159,35 @@ impl Broker {
         Ok(())
     }
 
+    /// Register an in-process handler for a *virtual* service. When
+    /// [`Broker::call`] (or [`Broker::call_with_timeout`]) is invoked with
+    /// the matching `service` name, the handler runs in the broker's tokio
+    /// runtime instead of being routed to a connected app.
+    ///
+    /// Useful for transitional bridging: while `notification_center` still
+    /// lives inside `tokimo-server`, register it as a local service so that
+    /// extracted apps (`helloworld`, etc.) can already call it through the
+    /// stable bus contract.
+    ///
+    /// Local services bypass the [`crate::registry::Registry`] entirely:
+    /// they have no `MethodDecl` catalogue and no per-method `requires_auth`
+    /// flag — the handler implementation owns auth.
+    pub fn register_local_service(
+        self: &Arc<Self>,
+        service: impl Into<String>,
+        handler: LocalServiceHandler,
+    ) {
+        let name = service.into();
+        info!(service = %name, "bus-broker: registering local service");
+        self.local_services.insert(name, handler);
+    }
+
+    /// Lookup helper used by tests / introspection.
+    #[must_use]
+    pub fn has_local_service(&self, service: &str) -> bool {
+        self.local_services.contains_key(service)
+    }
+
     /// Perform an HTTP-originated unary call to `service.method`.
     ///
     /// Panics on `default_call_timeout` if the app does not respond.
@@ -159,6 +211,17 @@ impl Broker {
         caller: CallerCtx,
         timeout: Duration,
     ) -> Result<Vec<u8>, BusError> {
+        // ── 1. Local (in-process) services take precedence ──
+        if let Some(handler) = self.local_services.get(service).map(|h| h.clone()) {
+            let fut = handler(method.to_string(), payload, caller);
+            return match tokio::time::timeout(timeout, fut).await {
+                Ok(res) => res,
+                Err(_) => Err(BusError::Timeout {
+                    ms: timeout.as_millis() as u64,
+                }),
+            };
+        }
+
         let entry = self
             .registry
             .get(service)

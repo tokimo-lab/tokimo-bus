@@ -27,6 +27,6 @@ mod broker;
 mod registry;
 mod session;
 
-pub use broker::{Broker, BrokerConfig};
+pub use broker::{Broker, BrokerConfig, LocalCallFuture, LocalServiceHandler};
 pub use registry::{Registry, ServiceEntry};
 pub use tokimo_bus_protocol as protocol;

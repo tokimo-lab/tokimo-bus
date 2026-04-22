@@ -106,3 +106,34 @@ fn tempdir() -> std::path::PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
+
+#[tokio::test]
+async fn local_service_handler() {
+    use std::sync::Arc;
+    let broker = Broker::new(BrokerConfig::default());
+
+    broker.register_local_service(
+        "notification_center",
+        Arc::new(|method, payload, _caller| {
+            Box::pin(async move {
+                assert_eq!(method, "notify");
+                let mut out = b"ack:".to_vec();
+                out.extend_from_slice(&payload);
+                Ok(out)
+            })
+        }),
+    );
+
+    assert!(broker.has_local_service("notification_center"));
+
+    let resp = broker
+        .call(
+            "notification_center",
+            "notify",
+            b"hello".to_vec(),
+            CallerCtx::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp, b"ack:hello");
+}
