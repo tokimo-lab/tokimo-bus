@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
 
-use tokimo_bus_protocol::{BusError, CallerCtx, MethodDecl};
+use tokimo_bus_protocol::{BusError, CallerCtx, DataPlaneSocket, MethodDecl};
 
 use crate::{client::BusClient, config::ClientConfig};
 
@@ -28,6 +28,7 @@ pub struct BusClientBuilder {
     pub(crate) methods: Vec<MethodDecl>,
     pub(crate) handlers: HashMap<String, InvokeHandler>,
     pub(crate) events: Vec<String>,
+    pub(crate) data_plane: Option<DataPlaneSocket>,
 }
 
 impl BusClientBuilder {
@@ -38,6 +39,7 @@ impl BusClientBuilder {
             methods: Vec::new(),
             handlers: HashMap::new(),
             events: Vec::new(),
+            data_plane: None,
         }
     }
 
@@ -74,6 +76,16 @@ impl BusClientBuilder {
     #[must_use]
     pub fn publishes(mut self, topic: impl Into<String>) -> Self {
         self.events.push(topic.into());
+        self
+    }
+
+    /// Advertise a data-plane socket. The server reverse-proxies
+    /// `/api/apps/<service>/data/*path` to this socket (stream-to-stream, with
+    /// Range/keep-alive passthrough). Use for video streaming, large file
+    /// transfer, uploads — anything unsuited for the rmp-serde control plane.
+    #[must_use]
+    pub fn data_plane(mut self, socket: DataPlaneSocket) -> Self {
+        self.data_plane = Some(socket);
         self
     }
 

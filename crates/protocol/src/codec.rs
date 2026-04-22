@@ -72,7 +72,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{BusFrame, HelloRequest, MethodDecl, ProtocolVersion};
+    use crate::frame::{BusFrame, HelloRequest, HttpMethod, MethodDecl, ProtocolVersion};
     use tokio::io::duplex;
 
     #[tokio::test]
@@ -88,9 +88,12 @@ mod tests {
                 name: "echo".into(),
                 requires_auth: false,
                 streaming: false,
+                http_method: HttpMethod::Post,
+                path: None,
                 description: None,
             }],
             events: vec![],
+            data_plane: None,
         });
 
         tokio::spawn(async move {

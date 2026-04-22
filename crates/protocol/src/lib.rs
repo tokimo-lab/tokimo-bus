@@ -31,6 +31,6 @@ pub mod frame;
 
 pub use codec::{MAX_FRAME_BYTES, read_frame, read_frame_opt, write_frame};
 pub use frame::{
-    BusError, BusFrame, CallerCtx, Event, HelloAck, HelloRequest, Invoke, MethodDecl,
-    ProtocolVersion, Response, StreamChunk, StreamClose, StreamOpen,
+    BusError, BusFrame, CallerCtx, DataPlaneSocket, Event, HelloAck, HelloRequest, HttpMethod,
+    Invoke, MethodDecl, ProtocolVersion, Response, StreamChunk, StreamClose, StreamOpen,
 };

@@ -18,7 +18,7 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 
 use tokimo_bus_protocol::{
-    BusError, BusFrame, CallerCtx, Event, Invoke, Response,
+    BusError, BusFrame, CallerCtx, Event, Invoke, MethodDecl, Response,
 };
 
 /// Future returned by a [`LocalServiceHandler`].
@@ -73,6 +73,9 @@ pub struct Broker {
     /// under a service name and let connected apps call them via the normal
     /// `bus.call(service, method, …)` protocol.
     local_services: DashMap<String, LocalServiceHandler>,
+    /// Method catalog for local services — required for HTTP typed-route
+    /// dispatch (verb + auth validation).
+    local_service_methods: DashMap<String, Arc<Vec<MethodDecl>>>,
 }
 
 #[derive(Clone)]
@@ -93,6 +96,7 @@ impl Broker {
             sessions: DashMap::new(),
             subscriptions: Mutex::new(HashMap::new()),
             local_services: DashMap::new(),
+            local_service_methods: DashMap::new(),
         })
     }
 
@@ -159,26 +163,20 @@ impl Broker {
         Ok(())
     }
 
-    /// Register an in-process handler for a *virtual* service. When
-    /// [`Broker::call`] (or [`Broker::call_with_timeout`]) is invoked with
-    /// the matching `service` name, the handler runs in the broker's tokio
-    /// runtime instead of being routed to a connected app.
-    ///
-    /// Useful for transitional bridging: while `notification_center` still
-    /// lives inside `tokimo-server`, register it as a local service so that
-    /// extracted apps (`helloworld`, etc.) can already call it through the
-    /// stable bus contract.
-    ///
-    /// Local services bypass the [`crate::registry::Registry`] entirely:
-    /// they have no `MethodDecl` catalogue and no per-method `requires_auth`
-    /// flag — the handler implementation owns auth.
+    /// Register an in-process handler for a *virtual* service with an
+    /// explicit method catalog. Used by `tokimo-server` so local services
+    /// (e.g. `notification_center`) can be dispatched from HTTP typed routes
+    /// with full per-method verb + auth validation, identical to real apps.
     pub fn register_local_service(
         self: &Arc<Self>,
         service: impl Into<String>,
+        methods: Vec<MethodDecl>,
         handler: LocalServiceHandler,
     ) {
         let name = service.into();
-        info!(service = %name, "bus-broker: registering local service");
+        info!(service = %name, methods = methods.len(), "bus-broker: registering local service");
+        self.local_service_methods
+            .insert(name.clone(), Arc::new(methods));
         self.local_services.insert(name, handler);
     }
 
@@ -186,6 +184,36 @@ impl Broker {
     #[must_use]
     pub fn has_local_service(&self, service: &str) -> bool {
         self.local_services.contains_key(service)
+    }
+
+    /// Method catalog for a local service, if registered.
+    #[must_use]
+    pub fn local_service_methods(&self, service: &str) -> Option<Arc<Vec<MethodDecl>>> {
+        self.local_service_methods.get(service).map(|m| m.clone())
+    }
+
+    /// Names of all registered local services (used for HTTP route expansion).
+    #[must_use]
+    pub fn local_service_names(&self) -> Vec<String> {
+        self.local_services
+            .iter()
+            .map(|e| e.key().clone())
+            .collect()
+    }
+
+    /// Method catalog for a remote (subprocess) service in the registry.
+    #[must_use]
+    pub fn registry_methods(&self, service: &str) -> Option<Arc<Vec<MethodDecl>>> {
+        self.registry.get(service).map(|e| e.methods)
+    }
+
+    /// Data-plane socket declared by a remote (subprocess) service, if any.
+    #[must_use]
+    pub fn registry_data_plane(
+        &self,
+        service: &str,
+    ) -> Option<tokimo_bus_protocol::DataPlaneSocket> {
+        self.registry.get(service).and_then(|e| e.data_plane)
     }
 
     /// Perform an HTTP-originated unary call to `service.method`.
@@ -213,6 +241,22 @@ impl Broker {
     ) -> Result<Vec<u8>, BusError> {
         // ── 1. Local (in-process) services take precedence ──
         if let Some(handler) = self.local_services.get(service).map(|h| h.clone()) {
+            // Validate against method catalog (matches remote-app semantics).
+            if let Some(methods) = self.local_service_methods.get(service) {
+                let decl =
+                    methods.iter().find(|m| m.name == method).ok_or_else(|| {
+                        BusError::MethodNotFound {
+                            service: service.to_string(),
+                            method: method.to_string(),
+                        }
+                    })?;
+                if decl.requires_auth && caller.user_id.is_none() {
+                    return Err(BusError::Unauthorized {
+                        service: service.to_string(),
+                        method: method.to_string(),
+                    });
+                }
+            }
             let fut = handler(method.to_string(), payload, caller);
             return match tokio::time::timeout(timeout, fut).await {
                 Ok(res) => res,

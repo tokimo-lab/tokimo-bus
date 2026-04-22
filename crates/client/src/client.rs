@@ -76,6 +76,7 @@ impl BusClient {
             auth_token: b.cfg.auth_token.clone(),
             methods: b.methods,
             events: b.events,
+            data_plane: b.data_plane,
         };
 
         let (client, runner) = Self::establish(b.cfg, hello, b.handlers).await?;

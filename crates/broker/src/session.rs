@@ -81,6 +81,7 @@ where
         tx: tx.clone(),
         methods: Arc::new(hello.methods.clone()),
         pid: hello.pid,
+        data_plane: hello.data_plane.clone(),
     };
     let generation = broker.registry().insert(entry);
 

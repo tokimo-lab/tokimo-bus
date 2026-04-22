@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use tokio::sync::mpsc;
-use tokimo_bus_protocol::{BusFrame, MethodDecl};
+use tokimo_bus_protocol::{BusFrame, DataPlaneSocket, MethodDecl};
 
 /// A single registered service connection.
 #[derive(Clone)]
@@ -19,6 +19,9 @@ pub struct ServiceEntry {
     pub methods: Arc<Vec<MethodDecl>>,
     /// Process id, informational.
     pub pid: u32,
+    /// App-local HTTP data-plane endpoint (used by the server to reverse-proxy
+    /// `/api/apps/<service>/data/*path`). `None` → app declined to expose one.
+    pub data_plane: Option<DataPlaneSocket>,
 }
 
 /// In-memory registry. Concurrent because HTTP handlers call into it without

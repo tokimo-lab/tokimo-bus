@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tokimo_bus_broker::{Broker, BrokerConfig};
 use tokimo_bus_client::{BusClient, ClientConfig};
-use tokimo_bus_protocol::{CallerCtx, MethodDecl};
+use tokimo_bus_protocol::{CallerCtx, HttpMethod, MethodDecl};
 
 #[tokio::test]
 async fn echo_roundtrip() {
@@ -27,6 +27,8 @@ async fn echo_roundtrip() {
             name: "echo".into(),
             requires_auth: false,
             streaming: false,
+            http_method: HttpMethod::Post,
+            path: None,
             description: None,
         })
         .on_invoke("echo", |req| async move { Ok(req.payload) })
@@ -82,6 +84,8 @@ async fn bad_token_rejected() {
             name: "echo".into(),
             requires_auth: false,
             streaming: false,
+            http_method: HttpMethod::Post,
+            path: None,
             description: None,
         })
         .on_invoke("echo", |req| async move { Ok(req.payload) })
@@ -114,6 +118,14 @@ async fn local_service_handler() {
 
     broker.register_local_service(
         "notification_center",
+        vec![MethodDecl {
+            name: "notify".into(),
+            requires_auth: false,
+            streaming: false,
+            http_method: HttpMethod::Post,
+            path: None,
+            description: None,
+        }],
         Arc::new(|method, payload, _caller| {
             Box::pin(async move {
                 assert_eq!(method, "notify");
