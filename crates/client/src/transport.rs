@@ -8,7 +8,7 @@ use std::pin::Pin;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use tokimo_bus_protocol::BusError;
+use tokimo_bus_protocol::{BusError, BusStream, DataPlaneSocket};
 
 use crate::config::Endpoint;
 
@@ -21,29 +21,22 @@ impl<T: AsyncRead + AsyncWrite> AsyncStream for T {}
 
 /// Establish a single connection to the broker.
 pub async fn connect(endpoint: &Endpoint) -> Result<ClientTransport, BusError> {
+    let socket = endpoint_to_socket(endpoint)?;
+    let stream = BusStream::connect(&socket).await?;
+    Ok(Box::pin(stream))
+}
+
+/// Convert an Endpoint to a DataPlaneSocket for the transport layer.
+fn endpoint_to_socket(endpoint: &Endpoint) -> Result<DataPlaneSocket, BusError> {
     match endpoint {
-        Endpoint::UnixSocket(path) => {
-            let stream = tokio::net::UnixStream::connect(path).await?;
-            Ok(Box::pin(stream))
-        }
+        Endpoint::UnixSocket(path) => Ok(DataPlaneSocket::Unix {
+            path: path.to_string_lossy().into_owned(),
+        }),
         #[cfg(windows)]
         Endpoint::NamedPipe(name) => {
-            // Retry briefly to tolerate races with the broker creating the pipe.
-            use std::time::Duration;
-            use tokio::net::windows::named_pipe::ClientOptions;
-            let deadline = std::time::Instant::now() + Duration::from_secs(5);
-            loop {
-                match ClientOptions::new().open(name) {
-                    Ok(p) => return Ok(Box::pin(p)),
-                    Err(e)
-                        if e.raw_os_error() == Some(231) // ERROR_PIPE_BUSY
-                            && std::time::Instant::now() < deadline =>
-                    {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-            }
+            // Strip the \\.\pipe\ prefix if present
+            let bare_name = name.strip_prefix(r"\\.\pipe\").unwrap_or(name).to_string();
+            Ok(DataPlaneSocket::NamedPipe { name: bare_name })
         }
     }
 }

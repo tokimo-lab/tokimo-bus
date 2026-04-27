@@ -9,7 +9,7 @@ repository.workspace   = true
 authors.workspace      = true
 
 [dependencies]
-tokio       = { workspace = true }
+tokio       = { workspace = true, features = ["net", "io-util", "time"] }
 serde       = { workspace = true }
 rmp-serde   = { workspace = true }
 thiserror   = { workspace = true }

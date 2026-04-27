@@ -131,28 +131,37 @@ impl Broker {
         if let Some(parent) = path.parent() {
             let _ = tokio::fs::create_dir_all(parent).await;
         }
-        let listener = tokio::net::UnixListener::bind(path)?;
+
+        let socket = tokimo_bus_protocol::DataPlaneSocket::Unix {
+            path: path.to_string_lossy().into_owned(),
+        };
+        let listener = tokimo_bus_protocol::BusListener::bind(&socket)?;
         info!(path = %path.display(), "bus-broker: listening on UDS");
 
         let me = self.clone();
         tokio::spawn(async move {
-            loop {
-                match listener.accept().await {
-                    Ok((stream, addr)) => {
-                        let peer = format!("{addr:?}");
-                        let me = me.clone();
-                        tokio::spawn(async move {
-                            crate::session::serve(me, stream, peer).await;
-                        });
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "bus-broker: accept failed");
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                    }
-                }
-            }
+            Self::accept_loop(me, listener).await;
         });
         Ok(())
+    }
+
+    /// Accept loop: takes connections from the listener and spawns session handlers.
+    async fn accept_loop(broker: Arc<Self>, mut listener: tokimo_bus_protocol::BusListener) {
+        loop {
+            match listener.accept().await {
+                Ok(stream) => {
+                    let peer = "local".to_string(); // UDS/NamedPipe don't have meaningful peer addresses
+                    let broker = broker.clone();
+                    tokio::spawn(async move {
+                        crate::session::serve(broker, stream, peer).await;
+                    });
+                }
+                Err(e) => {
+                    warn!(error = %e, "bus-broker: accept failed");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
     }
 
     /// Register an in-process handler for a *virtual* service with an
