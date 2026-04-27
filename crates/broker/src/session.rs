@@ -1,9 +1,6 @@
 //! Per-connection session: reads frames, dispatches, writes outbound.
 
-use std::sync::{
-    Arc,
-    atomic::AtomicU64,
-};
+use std::sync::{Arc, atomic::AtomicU64};
 
 use dashmap::DashMap;
 use tokio::{
@@ -12,14 +9,9 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
-use tokimo_bus_protocol::{
-    BusError, BusFrame, HelloAck, ProtocolVersion, Response, read_frame_opt, write_frame,
-};
+use tokimo_bus_protocol::{BusError, BusFrame, HelloAck, ProtocolVersion, Response, read_frame_opt, write_frame};
 
-use crate::{
-    broker::Broker,
-    registry::ServiceEntry,
-};
+use crate::{broker::Broker, registry::ServiceEntry};
 
 /// Handle a freshly-accepted connection. Runs until the stream closes.
 pub(crate) async fn serve<S>(broker: Arc<Broker>, stream: S, peer_addr: String)
@@ -123,12 +115,7 @@ where
     let next_req_id = Arc::new(AtomicU64::new(1));
 
     // Register this session with the broker so `call()` can route through it.
-    broker.attach_session(
-        &hello.service,
-        generation,
-        pending_out.clone(),
-        next_req_id.clone(),
-    );
+    broker.attach_session(&hello.service, generation, pending_out.clone(), next_req_id.clone());
 
     loop {
         match read_frame_opt::<_, BusFrame>(&mut reader).await {

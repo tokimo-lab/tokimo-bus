@@ -18,8 +18,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use tokimo_bus_protocol::{
-    BusError, BusFrame, CallerCtx, Event, HelloRequest, Invoke, ProtocolVersion, Response,
-    read_frame_opt, write_frame,
+    BusError, BusFrame, CallerCtx, Event, HelloRequest, Invoke, ProtocolVersion, Response, read_frame_opt, write_frame,
 };
 
 use crate::{
@@ -52,9 +51,7 @@ pub struct BusClient {
 }
 
 impl BusClient {
-    pub(crate) async fn connect_with_builder(
-        b: BusClientBuilder,
-    ) -> Result<Arc<Self>, BusError> {
+    pub(crate) async fn connect_with_builder(b: BusClientBuilder) -> Result<Arc<Self>, BusError> {
         let (service, version) = b
             .service
             .ok_or_else(|| BusError::BadRequest("service() was not called".into()))?;
@@ -90,13 +87,7 @@ impl BusClient {
         cfg: ClientConfig,
         hello: HelloRequest,
         handlers: HashMap<String, InvokeHandler>,
-    ) -> Result<
-        (
-            Arc<Self>,
-            impl std::future::Future<Output = ()> + Send + 'static,
-        ),
-        BusError,
-    > {
+    ) -> Result<(Arc<Self>, impl std::future::Future<Output = ()> + Send + 'static), BusError> {
         let mut stream = connect(&cfg.endpoint).await?;
         write_frame(&mut stream, &BusFrame::Hello(hello.clone())).await?;
 
@@ -104,15 +95,14 @@ impl BusClient {
         let ack = match read_frame_opt::<_, BusFrame>(&mut stream).await? {
             Some(BusFrame::HelloAck(a)) => a,
             Some(BusFrame::Response(r)) => {
-                let err = r.result.err().unwrap_or(BusError::Internal(
-                    "broker rejected Hello without explaining".into(),
-                ));
+                let err = r
+                    .result
+                    .err()
+                    .unwrap_or(BusError::Internal("broker rejected Hello without explaining".into()));
                 return Err(err);
             }
             Some(other) => {
-                return Err(BusError::Internal(format!(
-                    "expected HelloAck, got {other:?}"
-                )));
+                return Err(BusError::Internal(format!("expected HelloAck, got {other:?}")));
             }
             None => return Err(BusError::ConnectionClosed),
         };
@@ -162,9 +152,7 @@ impl BusClient {
             payload,
             caller,
         });
-        self.tx
-            .send(frame)
-            .map_err(|_| BusError::ConnectionClosed)?;
+        self.tx.send(frame).map_err(|_| BusError::ConnectionClosed)?;
 
         match reply_rx.await {
             Ok(resp) => resp.result,

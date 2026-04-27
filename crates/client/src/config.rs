@@ -43,12 +43,10 @@ impl ClientConfig {
     /// | `TOKIMO_BUS_TOKEN`   | yes      | Spawn auth token                           |
     /// | `TOKIMO_BUS_IDLE_MS` | no       | Idle-exit threshold in ms; `0` = disable   |
     pub fn from_env() -> Result<Self, BusError> {
-        let endpoint_raw = env::var("TOKIMO_BUS_SOCKET").map_err(|_| {
-            BusError::BadRequest("env TOKIMO_BUS_SOCKET is required".into())
-        })?;
-        let auth_token = env::var("TOKIMO_BUS_TOKEN").map_err(|_| {
-            BusError::BadRequest("env TOKIMO_BUS_TOKEN is required".into())
-        })?;
+        let endpoint_raw = env::var("TOKIMO_BUS_SOCKET")
+            .map_err(|_| BusError::BadRequest("env TOKIMO_BUS_SOCKET is required".into()))?;
+        let auth_token = env::var("TOKIMO_BUS_TOKEN")
+            .map_err(|_| BusError::BadRequest("env TOKIMO_BUS_TOKEN is required".into()))?;
         let idle_ms = env::var("TOKIMO_BUS_IDLE_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())

@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::mpsc;
 use tokimo_bus_protocol::{BusFrame, DataPlaneSocket, MethodDecl};
+use tokio::sync::mpsc;
 
 /// A single registered service connection.
 #[derive(Clone)]

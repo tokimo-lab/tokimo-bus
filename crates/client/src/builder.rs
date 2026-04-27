@@ -17,9 +17,8 @@ pub struct InvokeRequest {
 }
 
 pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-pub(crate) type InvokeHandler = Arc<
-    dyn Fn(InvokeRequest) -> BoxFuture<'static, Result<Vec<u8>, BusError>> + Send + Sync,
->;
+pub(crate) type InvokeHandler =
+    Arc<dyn Fn(InvokeRequest) -> BoxFuture<'static, Result<Vec<u8>, BusError>> + Send + Sync>;
 
 /// Fluent builder; see crate-level docs for a full example.
 pub struct BusClientBuilder {

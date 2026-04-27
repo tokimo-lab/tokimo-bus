@@ -14,8 +14,7 @@ where
     W: AsyncWrite + Unpin,
     T: Serialize,
 {
-    let bytes = rmp_serde::to_vec_named(value)
-        .map_err(|e| BusError::Codec(format!("encode: {e}")))?;
+    let bytes = rmp_serde::to_vec_named(value).map_err(|e| BusError::Codec(format!("encode: {e}")))?;
     if bytes.len() > MAX_FRAME_BYTES as usize {
         return Err(BusError::FrameTooLarge {
             size: bytes.len() as u64,
@@ -64,8 +63,7 @@ where
     }
     let mut buf = vec![0u8; len as usize];
     r.read_exact(&mut buf).await?;
-    let value = rmp_serde::from_slice::<T>(&buf)
-        .map_err(|e| BusError::Codec(format!("decode: {e}")))?;
+    let value = rmp_serde::from_slice::<T>(&buf).map_err(|e| BusError::Codec(format!("decode: {e}")))?;
     Ok(Some(value))
 }
 

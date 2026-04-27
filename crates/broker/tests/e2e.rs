@@ -50,20 +50,14 @@ async fn echo_roundtrip() {
         .call("unknown", "x", vec![], CallerCtx::default())
         .await
         .unwrap_err();
-    assert!(matches!(
-        err,
-        tokimo_bus_protocol::BusError::ServiceNotFound(_)
-    ));
+    assert!(matches!(err, tokimo_bus_protocol::BusError::ServiceNotFound(_)));
 
     // Unknown method
     let err = broker
         .call("helloworld", "nope", vec![], CallerCtx::default())
         .await
         .unwrap_err();
-    assert!(matches!(
-        err,
-        tokimo_bus_protocol::BusError::MethodNotFound { .. }
-    ));
+    assert!(matches!(err, tokimo_bus_protocol::BusError::MethodNotFound { .. }));
 
     client.shutdown();
 }
@@ -95,10 +89,7 @@ async fn bad_token_rejected() {
         Ok(_) => panic!("handshake should fail"),
         Err(e) => e,
     };
-    assert!(matches!(
-        err,
-        tokimo_bus_protocol::BusError::InvalidAuthToken
-    ));
+    assert!(matches!(err, tokimo_bus_protocol::BusError::InvalidAuthToken));
 }
 
 fn tempdir() -> std::path::PathBuf {
@@ -139,12 +130,7 @@ async fn local_service_handler() {
     assert!(broker.has_local_service("notification_center"));
 
     let resp = broker
-        .call(
-            "notification_center",
-            "notify",
-            b"hello".to_vec(),
-            CallerCtx::default(),
-        )
+        .call("notification_center", "notify", b"hello".to_vec(), CallerCtx::default())
         .await
         .unwrap();
     assert_eq!(resp, b"ack:hello");

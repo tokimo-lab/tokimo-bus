@@ -17,13 +17,10 @@ use parking_lot::Mutex;
 use tokio::sync::oneshot;
 use tracing::{info, warn};
 
-use tokimo_bus_protocol::{
-    BusError, BusFrame, CallerCtx, Event, Invoke, MethodDecl, Response,
-};
+use tokimo_bus_protocol::{BusError, BusFrame, CallerCtx, Event, Invoke, MethodDecl, Response};
 
 /// Future returned by a [`LocalServiceHandler`].
-pub type LocalCallFuture =
-    Pin<Box<dyn Future<Output = Result<Vec<u8>, BusError>> + Send + 'static>>;
+pub type LocalCallFuture = Pin<Box<dyn Future<Output = Result<Vec<u8>, BusError>> + Send + 'static>>;
 
 /// In-process handler for a "virtual" service that lives inside the broker
 /// host (e.g. tokimo-server) instead of a separate process.
@@ -32,9 +29,7 @@ pub type LocalCallFuture =
 /// extracted into their own binaries: an app can already call
 /// `bus.call("notification_center", "notify", ...)` even though
 /// `notification_center` is still part of the main server.
-pub type LocalServiceHandler = Arc<
-    dyn Fn(String, Vec<u8>, CallerCtx) -> LocalCallFuture + Send + Sync,
->;
+pub type LocalServiceHandler = Arc<dyn Fn(String, Vec<u8>, CallerCtx) -> LocalCallFuture + Send + Sync>;
 
 use crate::registry::Registry;
 
@@ -129,10 +124,7 @@ impl Broker {
     }
 
     /// Listen on a Unix domain socket (Linux / macOS / Windows 10 1803+).
-    pub async fn listen_unix<P: AsRef<Path>>(
-        self: &Arc<Self>,
-        path: P,
-    ) -> Result<(), BusError> {
+    pub async fn listen_unix<P: AsRef<Path>>(self: &Arc<Self>, path: P) -> Result<(), BusError> {
         let path = path.as_ref();
         // Remove stale socket from a previous crash.
         let _ = tokio::fs::remove_file(path).await;
@@ -175,8 +167,7 @@ impl Broker {
     ) {
         let name = service.into();
         info!(service = %name, methods = methods.len(), "bus-broker: registering local service");
-        self.local_service_methods
-            .insert(name.clone(), Arc::new(methods));
+        self.local_service_methods.insert(name.clone(), Arc::new(methods));
         self.local_services.insert(name, handler);
     }
 
@@ -195,10 +186,7 @@ impl Broker {
     /// Names of all registered local services (used for HTTP route expansion).
     #[must_use]
     pub fn local_service_names(&self) -> Vec<String> {
-        self.local_services
-            .iter()
-            .map(|e| e.key().clone())
-            .collect()
+        self.local_services.iter().map(|e| e.key().clone()).collect()
     }
 
     /// Method catalog for a remote (subprocess) service in the registry.
@@ -209,10 +197,7 @@ impl Broker {
 
     /// Data-plane socket declared by a remote (subprocess) service, if any.
     #[must_use]
-    pub fn registry_data_plane(
-        &self,
-        service: &str,
-    ) -> Option<tokimo_bus_protocol::DataPlaneSocket> {
+    pub fn registry_data_plane(&self, service: &str) -> Option<tokimo_bus_protocol::DataPlaneSocket> {
         self.registry.get(service).and_then(|e| e.data_plane)
     }
 
@@ -243,12 +228,12 @@ impl Broker {
         if let Some(handler) = self.local_services.get(service).map(|h| h.clone()) {
             // Validate against method catalog (matches remote-app semantics).
             if let Some(methods) = self.local_service_methods.get(service) {
-                let decl =
-                    methods.iter().find(|m| m.name == method).ok_or_else(|| {
-                        BusError::MethodNotFound {
-                            service: service.to_string(),
-                            method: method.to_string(),
-                        }
+                let decl = methods
+                    .iter()
+                    .find(|m| m.name == method)
+                    .ok_or_else(|| BusError::MethodNotFound {
+                        service: service.to_string(),
+                        method: method.to_string(),
                     })?;
                 if decl.requires_auth && caller.user_id.is_none() {
                     return Err(BusError::Unauthorized {
@@ -394,8 +379,8 @@ impl Broker {
 fn random_token() -> String {
     // Non-crypto-grade token adequate for single-machine spawn pairing;
     // real defense is the UDS's filesystem permission.
-    use std::time::{SystemTime, UNIX_EPOCH};
     use std::sync::atomic::AtomicU64;
+    use std::time::{SystemTime, UNIX_EPOCH};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let ns = SystemTime::now()
         .duration_since(UNIX_EPOCH)
