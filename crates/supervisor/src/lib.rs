@@ -147,6 +147,61 @@ impl Supervisor {
         }
     }
 
+    /// 已注册则停止旧实例并 swap spec；未注册则等价于 register。
+    /// resident 生命周期会触发自动重启。
+    pub async fn register_or_replace(self: &Arc<Self>, spec: AppSpec) -> Result<(), BusError> {
+        if self.apps.contains_key(&spec.service) {
+            self.stop_service(&spec.service).await;
+            self.apps.remove(&spec.service);
+        }
+        let service = spec.service.clone();
+        let is_resident = matches!(spec.lifecycle, Lifecycle::Resident);
+        let state = Arc::new(AppState {
+            spec: spec.clone(),
+            child: AsyncMutex::new(None),
+            backoff: Mutex::new(Backoff::new()),
+            last_spawn: Mutex::new(None),
+        });
+        self.apps.insert(spec.service, state);
+        info!(service = %service, "supervisor: registered (or replaced)");
+        if is_resident {
+            let me = self.clone();
+            let svc = service;
+            tokio::spawn(async move {
+                me.run_resident(svc).await;
+            });
+        }
+        Ok(())
+    }
+
+    /// 停掉子进程并删除 spec。后续 ensure_up 不会再启动。
+    pub async fn unregister(self: &Arc<Self>, service: &str) -> Result<(), BusError> {
+        if !self.apps.contains_key(service) {
+            return Err(BusError::ServiceNotFound(service.to_string()));
+        }
+        self.stop_service(service).await;
+        self.apps.remove(service);
+        info!(service = %service, "supervisor: unregistered");
+        Ok(())
+    }
+
+    /// Kill the child if running and wait for it to exit. No-op if absent.
+    async fn stop_service(&self, service: &str) {
+        let Some(state) = self.apps.get(service).map(|v| v.clone()) else {
+            return;
+        };
+        let mut guard = state.child.lock().await;
+        if let Some(mut child) = guard.take() {
+            if let Err(e) = child.kill().await {
+                warn!(service = %service, error = %e, "supervisor: kill failed");
+            }
+            if let Err(e) = child.wait().await {
+                warn!(service = %service, error = %e, "supervisor: wait after kill failed");
+            }
+            info!(service = %service, "supervisor: stopped");
+        }
+    }
+
     /// Ensure the app for `service` is running; no-op if already up.
     pub async fn ensure_up(self: &Arc<Self>, service: &str) -> Result<(), BusError> {
         let state = self
