@@ -238,3 +238,61 @@ pub fn cleanup(socket: &DataPlaneSocket) {
         }
     }
 }
+
+/// Compute the conventional [`DataPlaneSocket`] for an app server.
+///
+/// - **Unix**: derives `<parent of $TOKIMO_BUS_SOCKET>/apps/<service>.sock` and
+///   removes any stale socket file at that path. Requires `TOKIMO_BUS_SOCKET`
+///   to be set (the broker socket the supervisor handed us).
+/// - **Windows**: returns a [`DataPlaneSocket::NamedPipe`] with name
+///   `tokimo-app-<service>-<pid>` to avoid collisions across instances.
+///
+/// Apps that follow the standard layout should not implement this themselves
+/// — call [`BusListener::bind_for_app`] which composes this with a bind.
+pub fn app_socket(service: &str) -> io::Result<DataPlaneSocket> {
+    #[cfg(unix)]
+    {
+        let bus = std::env::var("TOKIMO_BUS_SOCKET")
+            .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "TOKIMO_BUS_SOCKET not set"))?;
+        let parent = std::path::PathBuf::from(&bus)
+            .parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "TOKIMO_BUS_SOCKET has no parent"))?
+            .to_path_buf();
+        let apps_dir = parent.join("apps");
+        std::fs::create_dir_all(&apps_dir)?;
+        let path = apps_dir.join(format!("{service}.sock"));
+        // Remove any leftover socket file from a previous run.
+        let _ = std::fs::remove_file(&path);
+        Ok(DataPlaneSocket::Unix {
+            path: path.to_string_lossy().into_owned(),
+        })
+    }
+    #[cfg(windows)]
+    {
+        Ok(DataPlaneSocket::NamedPipe {
+            name: format!("tokimo-app-{service}-{}", std::process::id()),
+        })
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = service;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "no transport available on this platform",
+        ))
+    }
+}
+
+impl BusListener {
+    /// Bind the conventional app-server listener for `service`.
+    ///
+    /// Combines [`app_socket`] with [`BusListener::bind`] so apps don't need
+    /// any `#[cfg(unix)] / #[cfg(windows)]` boilerplate. Returns both the
+    /// listener and the socket descriptor (the latter is what the app reports
+    /// back to the broker via the supervisor protocol).
+    pub fn bind_for_app(service: &str) -> io::Result<(Self, DataPlaneSocket)> {
+        let socket = app_socket(service)?;
+        let listener = Self::bind(&socket)?;
+        Ok((listener, socket))
+    }
+}

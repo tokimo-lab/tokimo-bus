@@ -35,4 +35,4 @@ pub use frame::{
     BusError, BusFrame, CallerCtx, DataPlaneSocket, Event, HelloAck, HelloRequest, HttpMethod, Invoke, MethodDecl,
     ProtocolVersion, Response, StreamChunk, StreamClose, StreamOpen,
 };
-pub use transport::{BusListener, BusStream, cleanup};
+pub use transport::{BusListener, BusStream, app_socket, cleanup};
