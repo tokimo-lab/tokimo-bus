@@ -35,14 +35,14 @@ pub struct Registry {
 impl Registry {
     /// Register or replace a service entry. Returns the new generation.
     pub fn insert(&self, mut entry: ServiceEntry) -> u64 {
-        let gen = {
+        let generation = {
             let mut g = self.next_gen.lock();
             *g += 1;
             *g
         };
-        entry.generation = gen;
+        entry.generation = generation;
         self.entries.insert(entry.service.clone(), entry);
-        gen
+        generation
     }
 
     /// Look up an entry by service name.
