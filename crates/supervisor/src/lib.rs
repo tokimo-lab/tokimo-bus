@@ -211,10 +211,10 @@ impl Supervisor {
             .clone();
 
         let mut child_guard = state.child.lock().await;
-        if let Some(child) = child_guard.as_mut() {
-            if child.try_wait().map_err(BusError::from)?.is_none() {
-                return Ok(()); // already running
-            }
+        if let Some(child) = child_guard.as_mut()
+            && child.try_wait().map_err(BusError::from)?.is_none()
+        {
+            return Ok(()); // already running
         }
         self.spawn_once(&state, &mut child_guard).await
     }
