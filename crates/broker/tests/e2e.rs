@@ -8,8 +8,6 @@ use tokimo_bus_protocol::{CallerCtx, DataPlaneSocket, HttpMethod, MethodDecl};
 
 /// Create a platform-appropriate `DataPlaneSocket` for testing.
 fn test_socket() -> DataPlaneSocket {
-    static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     #[cfg(unix)]
     {
         let dir = tempdir();
@@ -19,6 +17,8 @@ fn test_socket() -> DataPlaneSocket {
     }
     #[cfg(windows)]
     {
+        static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         DataPlaneSocket::NamedPipe {
             name: format!("tokimo-test-{}-{n}", std::process::id()),
         }
