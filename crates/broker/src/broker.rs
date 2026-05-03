@@ -123,26 +123,38 @@ impl Broker {
         &self.config
     }
 
-    /// Listen on a Unix domain socket (Linux / macOS / Windows 10 1803+).
-    pub async fn listen_unix<P: AsRef<Path>>(self: &Arc<Self>, path: P) -> Result<(), BusError> {
-        let path = path.as_ref();
-        // Remove stale socket from a previous crash.
-        let _ = tokio::fs::remove_file(path).await;
-        if let Some(parent) = path.parent() {
-            let _ = tokio::fs::create_dir_all(parent).await;
+    /// Listen on the given transport (Unix socket or Windows Named Pipe).
+    ///
+    /// For [`DataPlaneSocket::Unix`], removes any stale socket file and creates
+    /// parent directories before binding. For [`DataPlaneSocket::NamedPipe`],
+    /// the OS handles cleanup automatically.
+    pub async fn listen(self: &Arc<Self>, socket: tokimo_bus_protocol::DataPlaneSocket) -> Result<(), BusError> {
+        if let tokimo_bus_protocol::DataPlaneSocket::Unix { ref path } = socket {
+            let p = std::path::Path::new(path);
+            let _ = tokio::fs::remove_file(p).await;
+            if let Some(parent) = p.parent() {
+                let _ = tokio::fs::create_dir_all(parent).await;
+            }
         }
-
-        let socket = tokimo_bus_protocol::DataPlaneSocket::Unix {
-            path: path.to_string_lossy().into_owned(),
-        };
         let listener = tokimo_bus_protocol::BusListener::bind(&socket)?;
-        info!(path = %path.display(), "bus-broker: listening on UDS");
+        info!(?socket, "bus-broker: listening");
 
         let me = self.clone();
         tokio::spawn(async move {
             Self::accept_loop(me, listener).await;
         });
         Ok(())
+    }
+
+    /// Listen on a Unix domain socket (Linux / macOS / Windows 10 1803+).
+    ///
+    /// Convenience wrapper around [`Self::listen`] for the common Unix case.
+    pub async fn listen_unix<P: AsRef<Path>>(self: &Arc<Self>, path: P) -> Result<(), BusError> {
+        let path = path.as_ref();
+        self.listen(tokimo_bus_protocol::DataPlaneSocket::Unix {
+            path: path.to_string_lossy().into_owned(),
+        })
+        .await
     }
 
     /// Accept loop: takes connections from the listener and spawns session handlers.

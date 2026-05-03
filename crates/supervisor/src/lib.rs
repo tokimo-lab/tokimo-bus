@@ -9,12 +9,15 @@
 //! use std::sync::Arc;
 //! use std::time::Duration;
 //! use tokimo_bus_broker::{Broker, BrokerConfig};
+//! use tokimo_bus_protocol::DataPlaneSocket;
 //! use tokimo_bus_supervisor::{AppSpec, Lifecycle, Supervisor};
 //!
 //! let broker = Broker::new(BrokerConfig::default());
-//! broker.listen_unix("/run/tokimo-bus.sock").await?;
+//! // Unix: broker.listen(DataPlaneSocket::Unix { path: "/run/tokimo-bus.sock".into() }).await?;
+//! // Windows: broker.listen(DataPlaneSocket::NamedPipe { name: "tokimo-bus".into() }).await?;
 //!
-//! let sup = Supervisor::new(broker.clone(), "/run/tokimo-bus.sock");
+//! # let bus_endpoint = "/run/tokimo-bus.sock";
+//! let sup = Supervisor::new(broker.clone(), bus_endpoint);
 //! sup.register(AppSpec {
 //!     service: "helloworld".into(),
 //!     binary: "/usr/local/bin/tokimo-app-helloworld".into(),
@@ -106,17 +109,24 @@ impl Backoff {
 /// Process supervisor.
 pub struct Supervisor {
     broker: Arc<Broker>,
-    socket_path: PathBuf,
+    /// Bus endpoint passed to child processes as `TOKIMO_BUS_SOCKET`.
+    /// On Unix this is a socket path, on Windows a `pipe://<name>` URI.
+    bus_endpoint: String,
     apps: DashMap<String, Arc<AppState>>,
 }
 
 impl Supervisor {
     /// Construct a supervisor.
+    ///
+    /// `bus_endpoint` is passed verbatim to spawned processes as
+    /// `TOKIMO_BUS_SOCKET`. Use the platform-appropriate format:
+    /// - Unix: filesystem path (e.g. `/run/tokimo-bus.sock`)
+    /// - Windows: `pipe://<name>` (e.g. `pipe://tokimo-bus`)
     #[must_use]
-    pub fn new(broker: Arc<Broker>, socket_path: impl Into<PathBuf>) -> Arc<Self> {
+    pub fn new(broker: Arc<Broker>, bus_endpoint: impl Into<String>) -> Arc<Self> {
         Arc::new(Self {
             broker,
-            socket_path: socket_path.into(),
+            bus_endpoint: bus_endpoint.into(),
             apps: DashMap::new(),
         })
     }
@@ -271,7 +281,7 @@ impl Supervisor {
 
         let mut cmd = tokio::process::Command::new(&state.spec.binary);
         cmd.args(&state.spec.args)
-            .env("TOKIMO_BUS_SOCKET", &self.socket_path)
+            .env("TOKIMO_BUS_SOCKET", &self.bus_endpoint)
             .env("TOKIMO_BUS_TOKEN", token)
             .env("TOKIMO_BUS_IDLE_MS", idle_ms.to_string())
             .kill_on_drop(true);

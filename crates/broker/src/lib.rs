@@ -5,11 +5,15 @@
 //! ```no_run
 //! # async fn run() -> Result<(), tokimo_bus_protocol::BusError> {
 //! use tokimo_bus_broker::{Broker, BrokerConfig};
+//! use tokimo_bus_protocol::DataPlaneSocket;
 //!
 //! let broker = Broker::new(BrokerConfig::default());
 //! // Register a known service's auth token before spawning the app process.
 //! broker.issue_token("helloworld");
-//! broker.listen_unix("/run/tokimo-bus.sock").await?;
+//!
+//! // Cross-platform: use listen() with the right DataPlaneSocket variant.
+//! // broker.listen(DataPlaneSocket::Unix { path: "/run/tokimo-bus.sock".into() }).await?;
+//! // broker.listen(DataPlaneSocket::NamedPipe { name: "tokimo-bus".into() }).await?;
 //!
 //! // Later, from an HTTP handler:
 //! let result = broker

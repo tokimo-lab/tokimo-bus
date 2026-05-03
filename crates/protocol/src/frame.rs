@@ -75,6 +75,16 @@ pub enum DataPlaneSocket {
     },
 }
 
+impl DataPlaneSocket {
+    /// Human-readable identifier for logging.
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Unix { path } => path.clone(),
+            Self::NamedPipe { name } => format!("pipe://{name}"),
+        }
+    }
+}
+
 /// First frame an app sends after connecting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelloRequest {

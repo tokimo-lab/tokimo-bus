@@ -76,6 +76,17 @@ impl ClientConfig {
             idle_exit: None,
         }
     }
+
+    /// Construct an explicit Named Pipe config (useful for tests on Windows).
+    #[cfg(windows)]
+    pub fn named_pipe(name: impl Into<String>, token: impl Into<String>) -> Self {
+        Self {
+            endpoint: Endpoint::NamedPipe(format!(r"\\.\pipe\{}", name.into())),
+            auth_token: token.into(),
+            reconnect_max_backoff: None,
+            idle_exit: None,
+        }
+    }
 }
 
 fn parse_endpoint(raw: &str) -> Result<Endpoint, BusError> {
