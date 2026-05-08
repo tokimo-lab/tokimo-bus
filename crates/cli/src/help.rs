@@ -22,7 +22,7 @@ pub fn print_help_unified(cmd: &mut clap::Command) {
     println!();
 
     // Flat command table (clap-generated "help" pseudo-subcommands are excluded)
-    let leaves = collect_leaves(cmd, &[]);
+    let leaves = collect_leaves(cmd, &[name.as_str()]);
     if !leaves.is_empty() {
         println!("Commands:");
         let max_sig = leaves.iter().map(|(s, _)| s.len()).max().unwrap_or(0);
@@ -171,4 +171,96 @@ fn is_value_taking(arg: &clap::Arg) -> bool {
             | clap::ArgAction::Help
             | clap::ArgAction::Version
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{Arg, Command};
+
+    /// 测试子树命令（如 `items`）的叶子节点签名从该子树根开始
+    #[test]
+    fn test_subtree_collect_leaves_starts_with_subtree_name() {
+        let mut items_cmd = Command::new("items")
+            .subcommand(Command::new("list").about("列出所有条目"))
+            .subcommand(
+                Command::new("add")
+                    .about("添加新条目")
+                    .arg(Arg::new("content").required(true)),
+            )
+            .subcommand(
+                Command::new("update")
+                    .about("更新条目")
+                    .arg(Arg::new("id").required(true))
+                    .arg(Arg::new("content").required(true)),
+            );
+
+        items_cmd.build();
+
+        // 以 items_cmd 的名字作为初始路径
+        let leaves = collect_leaves(&items_cmd, &[items_cmd.get_name()]);
+
+        assert_eq!(leaves.len(), 3);
+
+        // 验证所有签名都以 "items" 开头
+        let signatures: Vec<String> = leaves.iter().map(|(s, _)| s.clone()).collect();
+        assert!(signatures.contains(&"items list".to_string()));
+        assert!(signatures.contains(&"items add <CONTENT>".to_string()));
+        assert!(signatures.contains(&"items update <ID> <CONTENT>".to_string()));
+    }
+
+    /// 测试根命令的嵌套子命令返回完整路径且不重复名称
+    #[test]
+    fn test_root_command_nested_full_path_no_duplication() {
+        let mut root = Command::new("tokimo-bus")
+            .about("Tokimo Bus CLI")
+            .subcommand(
+                Command::new("items")
+                    .subcommand(Command::new("list").about("列出条目"))
+                    .subcommand(Command::new("add").about("添加条目")),
+            )
+            .subcommand(Command::new("status").about("查看状态"));
+
+        root.build();
+
+        let leaves = collect_leaves(&root, &[root.get_name()]);
+
+        assert_eq!(leaves.len(), 3);
+
+        let signatures: Vec<String> = leaves.iter().map(|(s, _)| s.clone()).collect();
+
+        // 验证完整路径
+        assert!(signatures.contains(&"tokimo-bus items list".to_string()));
+        assert!(signatures.contains(&"tokimo-bus items add".to_string()));
+        assert!(signatures.contains(&"tokimo-bus status".to_string()));
+
+        // 验证没有重复的名称（例如 "tokimo-bus tokimo-bus items list"）
+        for sig in &signatures {
+            let parts: Vec<&str> = sig.split_whitespace().collect();
+            assert_eq!(parts[0], "tokimo-bus");
+            // 确保 tokimo-bus 不会出现两次
+            assert_eq!(parts.iter().filter(|&&p| p == "tokimo-bus").count(), 1);
+        }
+    }
+
+    /// 测试全局选项在 build() 后对子命令可见
+    #[test]
+    fn test_global_options_visible_after_build() {
+        let mut root = Command::new("test-app")
+            .arg(Arg::new("config").long("config").global(true).help("配置文件路径"))
+            .subcommand(Command::new("items").subcommand(Command::new("list")));
+
+        root.build();
+
+        // 检查根命令的全局选项
+        let root_globals: Vec<_> = root.get_arguments().filter(|a| a.is_global_set()).collect();
+
+        assert!(!root_globals.is_empty(), "根命令应该有全局选项");
+
+        // 检查子命令是否能看到全局选项
+        let items = root.find_subcommand("items").expect("items 子命令应该存在");
+        let items_globals: Vec<_> = items.get_arguments().filter(|a| a.is_global_set()).collect();
+
+        assert!(!items_globals.is_empty(), "子命令应该能看到全局选项（由 clap 传播）");
+    }
 }
