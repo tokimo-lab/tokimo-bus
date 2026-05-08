@@ -1,7 +1,9 @@
-/// Print a unified help page that flattens all leaf subcommands into a single table.
+/// Print a unified help page with progressive disclosure (one level deep).
 ///
-/// Prints the long_about (or about), a usage line, a flat command table, global options,
-/// and a footer hint. Designed to be called from the no-subcommand branch of `main`.
+/// Prints the long_about (or about), a usage line, a one-level command table, global options,
+/// and a footer hint. Groups (subcommands that have their own subcommands) are shown with just
+/// their name; leaf subcommands include positional argument signatures.
+/// Designed to be called from the no-subcommand branch of `main`.
 #[allow(clippy::print_stdout)]
 pub fn print_help_unified(cmd: &mut clap::Command) {
     use std::io::Write as _;
@@ -21,12 +23,12 @@ pub fn print_help_unified(cmd: &mut clap::Command) {
     println!("Usage: {name} [OPTIONS] <SUBCOMMAND>");
     println!();
 
-    // Flat command table (clap-generated "help" pseudo-subcommands are excluded)
-    let leaves = collect_leaves(cmd, &[name.as_str()]);
-    if !leaves.is_empty() {
+    // One-level command table (hidden subcommands excluded)
+    let commands = collect_direct_children(cmd);
+    if !commands.is_empty() {
         println!("Commands:");
-        let max_sig = leaves.iter().map(|(s, _)| s.len()).max().unwrap_or(0);
-        for (sig, desc) in &leaves {
+        let max_sig = commands.iter().map(|(s, _)| s.len()).max().unwrap_or(0);
+        for (sig, desc) in &commands {
             if desc.is_empty() {
                 println!("  {sig}");
             } else {
@@ -67,29 +69,36 @@ pub fn print_help_unified(cmd: &mut clap::Command) {
     let _ = std::io::stdout().flush();
 }
 
-fn collect_leaves<'a>(cmd: &'a clap::Command, parents: &[&'a str]) -> Vec<(String, String)> {
+/// Collect one level of direct child subcommands for display.
+///
+/// Hidden subcommands (e.g. clap's auto-generated `help`) are skipped.
+/// Groups (subcommands that themselves have subcommands) show only the subcommand name.
+/// Leaves show the subcommand name followed by positional argument placeholders.
+/// No parent path prefix is prepended — the caller's context is implied.
+fn collect_direct_children(cmd: &clap::Command) -> Vec<(String, String)> {
     let mut result = Vec::new();
     for sub in cmd.get_subcommands() {
-        let sub_name = sub.get_name();
-        // Skip clap's auto-generated "help" pseudo-subcommand at every level.
-        if sub_name == "help" {
+        // Skip hidden subcommands (explicitly hidden or clap's auto-generated "help").
+        // Note: in clap 4.6 the auto-generated help subcommand is not marked via is_hide_set(),
+        // so we also guard by name.
+        if sub.is_hide_set() || sub.get_name() == "help" {
             continue;
         }
-        let mut path = parents.to_vec();
-        path.push(sub_name);
-        if sub.has_subcommands() {
-            result.extend(collect_leaves(sub, &path));
+        let is_group = sub.get_subcommands().next().is_some();
+        let sig = if is_group {
+            // Groups: name only — children are discovered via their own help page.
+            sub.get_name().to_owned()
         } else {
-            let sig = build_signature(sub, &path);
-            let desc = sub
-                .get_about()
-                .map(|a| {
-                    let first = a.to_string().lines().next().unwrap_or("").trim().to_owned();
-                    trim_trailing_punctuation(first)
-                })
-                .unwrap_or_default();
-            result.push((sig, desc));
-        }
+            build_leaf_signature(sub)
+        };
+        let desc = sub
+            .get_about()
+            .map(|a| {
+                let first = a.to_string().lines().next().unwrap_or("").trim().to_owned();
+                trim_trailing_punctuation(first)
+            })
+            .unwrap_or_default();
+        result.push((sig, desc));
     }
     result
 }
@@ -107,8 +116,8 @@ fn trim_trailing_punctuation(mut s: String) -> String {
     s
 }
 
-fn build_signature(cmd: &clap::Command, path: &[&str]) -> String {
-    let mut parts: Vec<String> = path.iter().map(|s| (*s).to_owned()).collect();
+fn build_leaf_signature(cmd: &clap::Command) -> String {
+    let mut parts: Vec<String> = vec![cmd.get_name().to_owned()];
 
     for arg in cmd.get_arguments().filter(|a| a.is_positional()) {
         let name = arg.get_id().as_str().to_uppercase();
@@ -178,89 +187,147 @@ mod tests {
     use super::*;
     use clap::{Arg, Command};
 
-    /// 测试子树命令（如 `items`）的叶子节点签名从该子树根开始
+    /// Root command with a group + a leaf: group is not expanded, leaf includes positional args.
     #[test]
-    fn test_subtree_collect_leaves_starts_with_subtree_name() {
+    fn test_root_group_not_expanded_leaf_includes_args() {
+        let mut root = Command::new("bus")
+            .subcommand(
+                Command::new("items")
+                    .about("Item management")
+                    .subcommand(Command::new("list").about("List items"))
+                    .subcommand(
+                        Command::new("add")
+                            .about("Add an item")
+                            .arg(Arg::new("content").required(true)),
+                    ),
+            )
+            .subcommand(
+                Command::new("status")
+                    .about("Show status")
+                    .arg(Arg::new("id").required(true)),
+            );
+        root.build();
+
+        let children = collect_direct_children(&root);
+
+        // "items" is a group — only its name, no expansion
+        let items_entry = children.iter().find(|(s, _)| s.starts_with("items")).unwrap();
+        assert_eq!(
+            items_entry.0, "items",
+            "group must show name only, not expanded children"
+        );
+
+        // "status" is a leaf — must include positional arg
+        let status_entry = children.iter().find(|(s, _)| s.starts_with("status")).unwrap();
+        assert_eq!(status_entry.0, "status <ID>");
+
+        assert_eq!(children.len(), 2);
+    }
+
+    /// Group command passed directly to collect_direct_children: direct leaves rendered without
+    /// parent prefix ("items " must NOT appear).
+    #[test]
+    fn test_group_expands_direct_leaves_without_parent_prefix() {
         let mut items_cmd = Command::new("items")
-            .subcommand(Command::new("list").about("列出所有条目"))
+            .subcommand(Command::new("list").about("List items"))
             .subcommand(
                 Command::new("add")
-                    .about("添加新条目")
+                    .about("Add an item")
                     .arg(Arg::new("content").required(true)),
             )
             .subcommand(
                 Command::new("update")
-                    .about("更新条目")
+                    .about("Update an item")
                     .arg(Arg::new("id").required(true))
                     .arg(Arg::new("content").required(true)),
             );
-
         items_cmd.build();
 
-        // 以 items_cmd 的名字作为初始路径
-        let leaves = collect_leaves(&items_cmd, &[items_cmd.get_name()]);
+        let children = collect_direct_children(&items_cmd);
 
-        assert_eq!(leaves.len(), 3);
+        assert_eq!(children.len(), 3);
 
-        // 验证所有签名都以 "items" 开头
-        let signatures: Vec<String> = leaves.iter().map(|(s, _)| s.clone()).collect();
-        assert!(signatures.contains(&"items list".to_string()));
-        assert!(signatures.contains(&"items add <CONTENT>".to_string()));
-        assert!(signatures.contains(&"items update <ID> <CONTENT>".to_string()));
+        let sigs: Vec<&str> = children.iter().map(|(s, _)| s.as_str()).collect();
+        // No parent prefix "items" in any signature
+        assert!(sigs.contains(&"list"), "list must have no parent prefix");
+        assert!(
+            sigs.contains(&"add <CONTENT>"),
+            "add must include positional, no prefix"
+        );
+        assert!(
+            sigs.contains(&"update <ID> <CONTENT>"),
+            "update must include positionals, no prefix"
+        );
     }
 
-    /// 测试根命令的嵌套子命令返回完整路径且不重复名称
+    /// Clap's auto-generated hidden `help` subcommand must be filtered out.
     #[test]
-    fn test_root_command_nested_full_path_no_duplication() {
-        let mut root = Command::new("tokimo-bus")
-            .about("Tokimo Bus CLI")
-            .subcommand(
-                Command::new("items")
-                    .subcommand(Command::new("list").about("列出条目"))
-                    .subcommand(Command::new("add").about("添加条目")),
-            )
-            .subcommand(Command::new("status").about("查看状态"));
-
+    fn test_hidden_help_subcommand_filtered() {
+        let mut root = Command::new("bus").subcommand(Command::new("status").about("Show status"));
         root.build();
 
-        let leaves = collect_leaves(&root, &[root.get_name()]);
+        let children = collect_direct_children(&root);
 
-        assert_eq!(leaves.len(), 3);
-
-        let signatures: Vec<String> = leaves.iter().map(|(s, _)| s.clone()).collect();
-
-        // 验证完整路径
-        assert!(signatures.contains(&"tokimo-bus items list".to_string()));
-        assert!(signatures.contains(&"tokimo-bus items add".to_string()));
-        assert!(signatures.contains(&"tokimo-bus status".to_string()));
-
-        // 验证没有重复的名称（例如 "tokimo-bus tokimo-bus items list"）
-        for sig in &signatures {
-            let parts: Vec<&str> = sig.split_whitespace().collect();
-            assert_eq!(parts[0], "tokimo-bus");
-            // 确保 tokimo-bus 不会出现两次
-            assert_eq!(parts.iter().filter(|&&p| p == "tokimo-bus").count(), 1);
-        }
+        // Only "status" should appear; no "help"
+        let names: Vec<&str> = children.iter().map(|(s, _)| s.as_str()).collect();
+        assert!(!names.contains(&"help"), "hidden 'help' subcommand must be filtered");
+        assert!(names.contains(&"status"));
     }
 
-    /// 测试全局选项在 build() 后对子命令可见
+    /// Explicitly hidden subcommands are also filtered.
+    #[test]
+    fn test_explicitly_hidden_subcommand_filtered() {
+        let mut root = Command::new("bus")
+            .subcommand(Command::new("public").about("Public command"))
+            .subcommand(Command::new("internal").about("Internal command").hide(true));
+        root.build();
+
+        let children = collect_direct_children(&root);
+
+        let names: Vec<&str> = children.iter().map(|(s, _)| s.as_str()).collect();
+        assert!(names.contains(&"public"));
+        assert!(
+            !names.contains(&"internal"),
+            "explicitly hidden subcommand must be filtered"
+        );
+    }
+
+    /// Optional positional args render with brackets; multi-value appends `...`.
+    #[test]
+    fn test_leaf_signature_optional_and_multi_args() {
+        // A single optional multi-value positional (num_args 0..)
+        let mut cmd_multi = Command::new("search").arg(Arg::new("query").required(false).num_args(0..));
+        cmd_multi.build();
+        let sig = build_leaf_signature(&cmd_multi);
+        assert!(sig.contains("[QUERY]..."), "multi optional must be [ARG]...");
+
+        // A required positional followed by a single optional — valid ordering in clap
+        let mut cmd_mixed = Command::new("copy")
+            .arg(Arg::new("src").required(true))
+            .arg(Arg::new("dest").required(false));
+        cmd_mixed.build();
+        let sig2 = build_leaf_signature(&cmd_mixed);
+        assert!(sig2.contains("<SRC>"), "required arg must use <>");
+        assert!(sig2.contains("[DEST]"), "optional arg must use []");
+        assert!(!sig2.contains("<DEST>"), "optional must not use <>");
+    }
+
+    /// Global options propagation still works after build().
     #[test]
     fn test_global_options_visible_after_build() {
         let mut root = Command::new("test-app")
-            .arg(Arg::new("config").long("config").global(true).help("配置文件路径"))
+            .arg(Arg::new("config").long("config").global(true).help("Config file path"))
             .subcommand(Command::new("items").subcommand(Command::new("list")));
-
         root.build();
 
-        // 检查根命令的全局选项
         let root_globals: Vec<_> = root.get_arguments().filter(|a| a.is_global_set()).collect();
+        assert!(!root_globals.is_empty(), "root must have global options");
 
-        assert!(!root_globals.is_empty(), "根命令应该有全局选项");
-
-        // 检查子命令是否能看到全局选项
-        let items = root.find_subcommand("items").expect("items 子命令应该存在");
+        let items = root.find_subcommand("items").expect("items subcommand must exist");
         let items_globals: Vec<_> = items.get_arguments().filter(|a| a.is_global_set()).collect();
-
-        assert!(!items_globals.is_empty(), "子命令应该能看到全局选项（由 clap 传播）");
+        assert!(
+            !items_globals.is_empty(),
+            "subcommand must inherit global options after build"
+        );
     }
 }
