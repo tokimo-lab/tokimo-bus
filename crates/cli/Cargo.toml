@@ -1,0 +1,12 @@
+[package]
+name    = "tokimo-bus-cli"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+
+[dependencies]
+clap  = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+
+[lints]
+workspace = true

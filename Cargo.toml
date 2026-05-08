@@ -5,6 +5,7 @@ members = [
     "crates/broker",
     "crates/supervisor",
     "crates/auth",
+    "crates/cli",
 ]
 resolver = "2"
 
@@ -32,6 +33,7 @@ tokimo-bus-client     = { path = "crates/client",     version = "0.1.0" }
 tokimo-bus-broker     = { path = "crates/broker",     version = "0.1.0" }
 tokimo-bus-supervisor = { path = "crates/supervisor", version = "0.1.0" }
 tokimo-bus-auth       = { path = "crates/auth",       version = "0.1.0" }
+tokimo-bus-cli        = { path = "crates/cli",        version = "0.1.0" }
 
 [workspace.lints.rust]
 unsafe_code     = "warn"
