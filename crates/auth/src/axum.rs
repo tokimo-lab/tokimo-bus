@@ -62,7 +62,7 @@ mod tests {
         parts
     }
 
-    fn block_on_ready<F>(future: F) -> F::Output
+    fn block_on_ready<F>(future: F) -> Option<F::Output>
     where
         F: Future,
     {
@@ -71,8 +71,8 @@ mod tests {
         let mut future = std::pin::pin!(future);
 
         match future.as_mut().poll(&mut cx) {
-            Poll::Ready(output) => output,
-            Poll::Pending => panic!("extractor future should be ready"),
+            Poll::Ready(output) => Some(output),
+            Poll::Pending => None,
         }
     }
 
@@ -80,8 +80,9 @@ mod tests {
     fn extracts_user_id_from_header() {
         let mut parts = request_parts(Some("user-1"));
 
-        let user =
-            block_on_ready(TokimoUser::from_request_parts(&mut parts, &())).expect("user id should be extracted");
+        let user = block_on_ready(TokimoUser::from_request_parts(&mut parts, &()))
+            .expect("extractor future should be ready")
+            .expect("user id should be extracted");
 
         assert_eq!(user.user_id, "user-1");
     }
@@ -90,8 +91,9 @@ mod tests {
     fn rejects_missing_header() {
         let mut parts = request_parts(None);
 
-        let (status, Json(body)) =
-            block_on_ready(TokimoUser::from_request_parts(&mut parts, &())).expect_err("missing header should reject");
+        let (status, Json(body)) = block_on_ready(TokimoUser::from_request_parts(&mut parts, &()))
+            .expect("extractor future should be ready")
+            .expect_err("missing header should reject");
 
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(
