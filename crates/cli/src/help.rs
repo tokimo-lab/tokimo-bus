@@ -13,7 +13,10 @@ pub fn print_help_unified(cmd: &mut clap::Command) {
     let name = cmd.get_name().to_string();
 
     // Header: long_about preferred over about
-    let header = cmd.get_long_about().or_else(|| cmd.get_about()).map(|s| s.to_string());
+    let header = cmd
+        .get_long_about()
+        .or_else(|| cmd.get_about())
+        .map(ToString::to_string);
     if let Some(text) = header {
         println!("{text}");
         println!();
@@ -121,7 +124,7 @@ fn build_leaf_signature(cmd: &clap::Command) -> String {
 
     for arg in cmd.get_arguments().filter(|a| a.is_positional()) {
         let name = arg.get_id().as_str().to_uppercase();
-        let multiple = arg.get_num_args().map(|r| r.max_values() > 1).unwrap_or(false);
+        let multiple = arg.get_num_args().is_some_and(|r| r.max_values() > 1);
         let placeholder = if arg.is_required_set() {
             format!("<{name}>")
         } else {
@@ -143,12 +146,12 @@ fn format_option_left(arg: &clap::Arg) -> String {
     };
     let mut s = format!("--{long}");
     if is_value_taking(arg) {
-        let placeholder = arg
-            .get_value_names()
-            .and_then(|ns| ns.first())
-            .map(|n| n.to_string().to_uppercase())
-            .unwrap_or_else(|| arg.get_id().as_str().to_uppercase());
-        s.push_str(&format!(" <{placeholder}>"));
+        use std::fmt::Write as _;
+        let placeholder = arg.get_value_names().and_then(|ns| ns.first()).map_or_else(
+            || arg.get_id().as_str().to_uppercase(),
+            |n| n.to_string().to_uppercase(),
+        );
+        let _ = write!(s, " <{placeholder}>");
     }
     s
 }
