@@ -134,8 +134,22 @@ impl BusStream {
         match socket {
             #[cfg(unix)]
             DataPlaneSocket::Unix { path } => {
-                let stream = tokio::net::UnixStream::connect(path).await?;
-                Ok(Self::Unix(stream))
+                // Retry briefly on ConnectionRefused / NotFound — broker may still be
+                // initializing the listener (mirror Windows NamedPipe PIPE_BUSY behavior).
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                loop {
+                    match tokio::net::UnixStream::connect(path).await {
+                        Ok(stream) => return Ok(Self::Unix(stream)),
+                        Err(e) if matches!(e.kind(), io::ErrorKind::ConnectionRefused | io::ErrorKind::NotFound) => {
+                            if std::time::Instant::now() < deadline {
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                continue;
+                            }
+                            return Err(e);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
             }
             #[cfg(not(unix))]
             DataPlaneSocket::Unix { .. } => Err(io::Error::new(
