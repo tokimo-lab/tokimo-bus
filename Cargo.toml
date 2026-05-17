@@ -18,7 +18,7 @@ repository   = "https://github.com/tokimo-lab/tokimo-bus"
 authors      = ["Tokimo Lab"]
 
 [workspace.dependencies]
-tokio          = { version = "1.38", features = ["rt-multi-thread", "net", "io-util", "macros", "sync", "time", "process", "signal", "fs"] }
+tokio          = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "sync", "time", "process", "signal", "fs"] }
 serde          = { version = "1", features = ["derive"] }
 rmp-serde      = "1.3"
 thiserror      = "1.0"
