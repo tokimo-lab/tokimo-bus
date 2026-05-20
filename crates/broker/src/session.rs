@@ -116,6 +116,7 @@ where
 
     // Register this session with the broker so `call()` can route through it.
     broker.attach_session(&hello.service, generation, pending_out.clone(), next_req_id.clone());
+    broker.probe_capabilities(hello.service.clone(), generation);
 
     loop {
         match read_frame_opt::<_, BusFrame>(&mut reader).await {

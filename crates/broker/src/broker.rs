@@ -14,6 +14,7 @@ use std::{
 
 use dashmap::DashMap;
 use parking_lot::Mutex;
+use serde::Deserialize;
 use tokio::sync::oneshot;
 use tracing::{info, warn};
 
@@ -51,6 +52,21 @@ impl Default for BrokerConfig {
     }
 }
 
+/// Cached capability information advertised by a bus service.
+#[derive(Clone, Debug)]
+pub struct ServiceCapabilities {
+    /// Package or service version reported by the service.
+    pub version: String,
+    /// Method names the service reported as invokable.
+    pub methods: HashSet<String>,
+}
+
+#[derive(Deserialize)]
+struct CapabilityResponse {
+    version: String,
+    methods: Vec<String>,
+}
+
 /// Broker runtime, embeddable in `tokimo-server`.
 pub struct Broker {
     config: BrokerConfig,
@@ -71,6 +87,8 @@ pub struct Broker {
     /// Method catalog for local services — required for HTTP typed-route
     /// dispatch (verb + auth validation).
     local_service_methods: DashMap<String, Arc<Vec<MethodDecl>>>,
+    /// Capability handshakes cached by service name.
+    capabilities: DashMap<String, ServiceCapabilities>,
 }
 
 #[derive(Clone)]
@@ -92,6 +110,7 @@ impl Broker {
             subscriptions: Mutex::new(HashMap::new()),
             local_services: DashMap::new(),
             local_service_methods: DashMap::new(),
+            capabilities: DashMap::new(),
         })
     }
 
@@ -222,6 +241,59 @@ impl Broker {
         self.registry.get(service).and_then(|e| e.data_plane)
     }
 
+    /// Cached capabilities for a remote service, if the handshake has completed.
+    #[must_use]
+    pub fn get_capabilities(&self, service: &str) -> Option<ServiceCapabilities> {
+        self.capabilities.get(service).map(|entry| entry.value().clone())
+    }
+
+    pub(crate) fn probe_capabilities(self: &Arc<Self>, service: String, generation: u64) {
+        self.capabilities.remove(&service);
+        let broker = Arc::clone(self);
+        tokio::spawn(async move {
+            let result = broker
+                .call_with_timeout(
+                    &service,
+                    "capabilities",
+                    b"{}".to_vec(),
+                    CallerCtx::default(),
+                    broker.config.default_call_timeout,
+                )
+                .await;
+
+            let bytes = match result {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!(service = %service, error = %e, capabilities = "unknown", "bus-broker: capability probe failed");
+                    return;
+                }
+            };
+
+            let response = match serde_json::from_slice::<CapabilityResponse>(&bytes) {
+                Ok(response) => response,
+                Err(e) => {
+                    warn!(service = %service, error = %e, capabilities = "unknown", "bus-broker: capability probe returned invalid JSON");
+                    return;
+                }
+            };
+
+            let still_current = broker
+                .registry
+                .get(&service)
+                .map(|entry| entry.generation == generation)
+                .unwrap_or(false);
+            if still_current {
+                broker.capabilities.insert(
+                    service,
+                    ServiceCapabilities {
+                        version: response.version,
+                        methods: response.methods.into_iter().collect(),
+                    },
+                );
+            }
+        });
+    }
+
     /// Perform an HTTP-originated unary call to `service.method`.
     ///
     /// Panics on `default_call_timeout` if the app does not respond.
@@ -276,6 +348,19 @@ impl Broker {
             .registry
             .get(service)
             .ok_or_else(|| BusError::ServiceNotFound(service.to_string()))?;
+
+        if let Some(capabilities) = self
+            .capabilities
+            .get(service)
+            .filter(|capabilities| method != "capabilities" && !capabilities.methods.contains(method))
+        {
+            warn!(
+                service = %service,
+                method = %method,
+                version = %capabilities.version.as_str(),
+                "bus-broker: invoking method not advertised by service capabilities",
+            );
+        }
 
         let decl = entry
             .methods
@@ -394,6 +479,14 @@ impl Broker {
 
     pub(crate) fn detach_session(&self, service: &str, generation: u64) {
         self.sessions.remove(&(service.to_string(), generation));
+        let should_remove = self
+            .registry
+            .get(service)
+            .map(|entry| entry.generation == generation)
+            .unwrap_or(true);
+        if should_remove {
+            self.capabilities.remove(service);
+        }
     }
 }
 
