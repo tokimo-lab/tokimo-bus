@@ -153,9 +153,9 @@ where
                             return;
                         }
                     };
-                    let result = broker
-                        .call(&target_service, &target_method, inv.payload, inv.caller)
-                        .await;
+                    let mut caller = inv.caller;
+                    caller.caller_app_id = Some(originator.clone());
+                    let result = broker.call(&target_service, &target_method, inv.payload, caller).await;
                     debug!(
                         from = %originator,
                         target = %format!("{target_service}.{target_method}"),

@@ -131,6 +131,10 @@ pub struct CallerCtx {
     /// Optional workspace slug for multi-tenant deployments.
     #[serde(default)]
     pub workspace: Option<String>,
+    /// Identifies the app that originated this call (e.g. `"video"`).
+    /// Stamped by the broker for app-originated requests; `None` for HTTP-origin requests.
+    #[serde(default)]
+    pub caller_app_id: Option<String>,
 }
 
 /// Unary request.
