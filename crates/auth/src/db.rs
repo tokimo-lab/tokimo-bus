@@ -61,7 +61,9 @@ pub fn load_database_url() -> Result<String, AuthError> {
 pub async fn connect_db() -> Result<DatabaseConnection, AuthError> {
     let url = load_database_url()?;
     let mut opts = ConnectOptions::new(url);
-    opts.sqlx_logging(false);
+    opts.sqlx_logging(false)
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .acquire_timeout(std::time::Duration::from_secs(10));
     Ok(Database::connect(opts).await?)
 }
 
