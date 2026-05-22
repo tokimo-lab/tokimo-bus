@@ -43,7 +43,11 @@ use std::{
 
 use dashmap::DashMap;
 use parking_lot::Mutex;
-use tokio::{process::Child, sync::Mutex as AsyncMutex};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    process::Child,
+    sync::Mutex as AsyncMutex,
+};
 use tracing::{info, warn};
 
 use tokimo_bus_broker::Broker;
@@ -284,17 +288,42 @@ impl Supervisor {
             .env("TOKIMO_BUS_SOCKET", &self.bus_endpoint)
             .env("TOKIMO_BUS_TOKEN", token)
             .env("TOKIMO_BUS_IDLE_MS", idle_ms.to_string())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
         for (k, v) in &state.spec.env {
             cmd.env(k, v);
         }
 
-        let child = cmd.spawn().map_err(BusError::from)?;
+        let mut child = cmd.spawn().map_err(BusError::from)?;
         info!(
             service = %state.spec.service,
             pid = child.id(),
             "supervisor: spawned",
         );
+
+        // Forward child stdout/stderr through the parent's tracing subscriber,
+        // tagged with the service name so logs from different sidecars are
+        // distinguishable.
+        let svc_stdout = state.spec.service.clone();
+        if let Some(stdout) = child.stdout.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    info!(service = %svc_stdout, "{line}");
+                }
+            });
+        }
+        let svc_stderr = state.spec.service.clone();
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    warn!(service = %svc_stderr, "[stderr] {line}");
+                }
+            });
+        }
+
         *state.last_spawn.lock() = Some(Instant::now());
         **child_guard = Some(child);
         Ok(())
