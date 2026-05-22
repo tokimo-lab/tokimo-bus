@@ -11,7 +11,7 @@ cli-db = ["dep:sea-orm", "dep:sha2", "dep:hex", "dep:chrono", "dep:uuid", "dep:d
 
 [dependencies]
 axum = { version = "0.8", optional = true }
-sea-orm = { version = "2.0.0-rc.37", optional = true, default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls", "with-uuid", "with-chrono", "macros"] }
+sea-orm = { version = "2.0.0-rc.38", optional = true, default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls", "with-uuid", "with-chrono", "macros"] }
 sha2 = { version = "0.10", optional = true }
 hex = { version = "0.4", optional = true }
 chrono = { version = "0.4", optional = true, features = ["serde"] }

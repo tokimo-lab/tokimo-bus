@@ -1,6 +1,5 @@
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, ConnectOptions, Database, DatabaseConnection, Set, entity::prelude::*};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -9,7 +8,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub user_id: Uuid,
-    pub key_hash: String,
+    pub token: String,
     pub expires_at: Option<DateTime<FixedOffset>>,
     pub last_used_at: Option<DateTime<FixedOffset>>,
 }
@@ -62,17 +61,18 @@ pub fn load_database_url() -> Result<String, AuthError> {
 pub async fn connect_db() -> Result<DatabaseConnection, AuthError> {
     let url = load_database_url()?;
     let mut opts = ConnectOptions::new(url);
-    opts.sqlx_logging(false);
+    opts.sqlx_logging(false)
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .acquire_timeout(std::time::Duration::from_secs(10));
     Ok(Database::connect(opts).await?)
 }
 
 pub async fn verify_token(db: &DatabaseConnection, token: &str) -> Result<VerifiedUser, AuthError> {
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    let hash = hex::encode(hasher.finalize());
-
+    // Schema migration (commit d21c2c68f): api_keys now stores tokens in
+    // plaintext (column `token`, unique index). Previously this was a
+    // SHA-256 hash in `key_hash`; the column is gone. Look up by plaintext.
     let row = Entity::find()
-        .filter(Column::KeyHash.eq(&hash))
+        .filter(Column::Token.eq(token))
         .one(db)
         .await?
         .ok_or(AuthError::InvalidToken)?;

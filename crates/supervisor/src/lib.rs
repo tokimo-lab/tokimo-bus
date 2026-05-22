@@ -26,6 +26,7 @@
 //!     lifecycle: Lifecycle::OnDemand {
 //!         idle_timeout: Duration::from_secs(300),
 //!     },
+//!     working_dir: None,
 //! });
 //! sup.start_all_resident().await;
 //! # Ok(())
@@ -80,6 +81,8 @@ pub struct AppSpec {
     pub env: Vec<(String, String)>,
     /// When / how to start.
     pub lifecycle: Lifecycle,
+    /// Optional working directory for the spawned process.
+    pub working_dir: Option<PathBuf>,
 }
 
 struct AppState {
@@ -291,6 +294,9 @@ impl Supervisor {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        if let Some(wd) = &state.spec.working_dir {
+            cmd.current_dir(wd);
+        }
         for (k, v) in &state.spec.env {
             cmd.env(k, v);
         }
