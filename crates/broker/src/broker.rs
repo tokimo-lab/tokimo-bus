@@ -150,7 +150,12 @@ impl Broker {
     pub async fn listen(self: &Arc<Self>, socket: tokimo_bus_protocol::DataPlaneSocket) -> Result<(), BusError> {
         if let tokimo_bus_protocol::DataPlaneSocket::Unix { ref path } = socket {
             let p = std::path::Path::new(path);
-            let _ = tokio::fs::remove_file(p).await;
+
+            // Check if socket file exists and whether it's active
+            if p.exists() {
+                check_and_cleanup_unix_socket(p, path).await?;
+            }
+
             if let Some(parent) = p.parent() {
                 let _ = tokio::fs::create_dir_all(parent).await;
             }
@@ -488,6 +493,49 @@ impl Broker {
             self.capabilities.remove(service);
         }
     }
+}
+
+/// Check if a Unix socket path is already active, and clean up if stale.
+///
+/// On Unix: attempt to connect to see if socket is alive. If connection succeeds,
+/// return error (socket is active). If ConnectionRefused/NotFound, allow cleanup.
+/// Other errors propagate.
+///
+/// On non-Unix: this is a no-op (DataPlaneSocket::Unix should not be used on
+/// non-Unix targets in practice, but the enum variant exists on all platforms).
+#[cfg(unix)]
+async fn check_and_cleanup_unix_socket(path: &Path, path_str: &str) -> Result<(), BusError> {
+    // Attempt to connect to see if it's active
+    match tokio::net::UnixStream::connect(path).await {
+        Ok(_) => {
+            // Socket is active, return error instead of unlinking
+            Err(BusError::Io(format!(
+                "Unix socket {} is already bound by an active listener",
+                path_str
+            )))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+            // Socket file exists but no listener - it's stale, remove it
+            let _ = tokio::fs::remove_file(path).await;
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Race condition: file disappeared between exists check and connect
+            // No action needed, will create fresh
+            Ok(())
+        }
+        Err(e) => {
+            // Other errors (permission denied, etc.) - propagate
+            Err(BusError::Io(format!("Failed to check Unix socket {}: {}", path_str, e)))
+        }
+    }
+}
+
+#[cfg(not(unix))]
+async fn check_and_cleanup_unix_socket(_path: &Path, _path_str: &str) -> Result<(), BusError> {
+    // On non-Unix platforms, DataPlaneSocket::Unix should not be used in practice,
+    // but the variant exists for cross-platform compilation. No-op here.
+    Ok(())
 }
 
 fn random_token() -> String {

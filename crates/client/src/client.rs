@@ -88,7 +88,26 @@ impl BusClient {
         hello: HelloRequest,
         handlers: HashMap<String, InvokeHandler>,
     ) -> Result<(Arc<Self>, impl std::future::Future<Output = ()> + Send + 'static), BusError> {
-        let mut stream = connect(&cfg.endpoint).await?;
+        // Retry initial transport connect if reconnect_max_backoff is configured.
+        // Only retry on transient endpoint availability errors (ConnectionRefused/NotFound
+        // on Unix, pipe busy on Windows) before we send Hello to avoid consuming spawn tokens.
+        let mut stream = if let Some(max_backoff) = cfg.reconnect_max_backoff {
+            let deadline = Instant::now() + max_backoff;
+            let mut backoff_ms = 50;
+            loop {
+                match connect(&cfg.endpoint).await {
+                    Ok(s) => break s,
+                    Err(BusError::Io(msg)) if is_transient_connect_msg(&msg) && Instant::now() < deadline => {
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                        backoff_ms = (backoff_ms * 2).min(1000); // cap at 1s per retry
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        } else {
+            connect(&cfg.endpoint).await?
+        };
         write_frame(&mut stream, &BusFrame::Hello(hello.clone())).await?;
 
         // First reply must be HelloAck or a Response carrying a BusError.
@@ -322,4 +341,11 @@ async fn dispatch_invoke(client: Arc<BusClient>, inv: Invoke) {
         }),
     };
     let _ = client.tx.send(BusFrame::Response(Response { req_id, result }));
+}
+
+/// Returns true if the I/O error message indicates a transient endpoint
+/// availability failure that should be retried on initial connect (Unix
+/// ConnectionRefused/NotFound, Windows pipe busy).
+fn is_transient_connect_msg(msg: &str) -> bool {
+    msg.contains("Connection refused") || msg.contains("No such file or directory")
 }
