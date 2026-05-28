@@ -33,7 +33,7 @@
 //! # }
 //! ```
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 
 use std::{
@@ -299,6 +299,24 @@ impl Supervisor {
         }
         for (k, v) in &state.spec.env {
             cmd.env(k, v);
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: pre_exec runs in the child after fork() but before exec().
+            // We only call async-signal-safe operations (prctl + getppid + exit).
+            #[allow(unsafe_code)]
+            unsafe {
+                cmd.pre_exec(|| {
+                    nix::sys::prctl::set_pdeathsig(nix::sys::signal::Signal::SIGKILL).map_err(std::io::Error::other)?;
+                    // Race guard: parent may have died between fork and pre_exec.
+                    // Linux PR_SET_PDEATHSIG only fires on future death; check now.
+                    if nix::unistd::getppid().as_raw() == 1 {
+                        std::process::exit(0);
+                    }
+                    Ok(())
+                });
+            }
         }
 
         let mut child = cmd.spawn().map_err(BusError::from)?;
