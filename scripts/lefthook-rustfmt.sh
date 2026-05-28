@@ -10,6 +10,16 @@ for f in "$@"; do
     dir=$(dirname "$dir")
   done
 
-  edition=$(grep -m1 '^edition' "$dir/Cargo.toml" 2>/dev/null | sed 's/.*"\([^"]*\)".*/\1/')
+  edition_line=$(grep -m1 '^edition' "$dir/Cargo.toml" 2>/dev/null)
+  if echo "$edition_line" | grep -q 'workspace'; then
+    # edition inherited from workspace — walk up to find workspace Cargo.toml
+    ws=$(dirname "$dir")
+    while [ "$ws" != "." ] && [ "$ws" != "/" ] && [ ! -f "$ws/Cargo.toml" ]; do
+      ws=$(dirname "$ws")
+    done
+    edition=$(grep -m1 '^edition' "$ws/Cargo.toml" 2>/dev/null | sed 's/.*"\([^"]*\)".*/\1/')
+  else
+    edition=$(echo "$edition_line" | sed 's/.*"\([^"]*\)".*/\1/')
+  fi
   rustfmt --edition "${edition:-2024}" "$f"
 done

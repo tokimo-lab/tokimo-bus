@@ -334,7 +334,7 @@ impl Supervisor {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    info!(service = %svc_stdout, "{line}");
+                    println!("{}[{svc_stdout}]\x1b[0m {line}", svc_color(&svc_stdout));
                 }
             });
         }
@@ -343,7 +343,7 @@ impl Supervisor {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    warn!(service = %svc_stderr, "[stderr] {line}");
+                    eprintln!("{}[{svc_stderr}]\x1b[0m {line}", svc_color(&svc_stderr));
                 }
             });
         }
@@ -352,4 +352,25 @@ impl Supervisor {
         **child_guard = Some(child);
         Ok(())
     }
+}
+
+/// Pick a fixed ANSI color for a service name via hash, so each service
+/// always gets the same color across restarts.
+fn svc_color(name: &str) -> &'static str {
+    const PALETTE: &[&str] = &[
+        "\x1b[36m", // cyan
+        "\x1b[33m", // yellow
+        "\x1b[35m", // magenta
+        "\x1b[34m", // blue
+        "\x1b[96m", // bright cyan
+        "\x1b[93m", // bright yellow
+        "\x1b[95m", // bright magenta
+        "\x1b[94m", // bright blue
+        "\x1b[37m", // white
+        "\x1b[91m", // bright red
+    ];
+    let hash = name
+        .bytes()
+        .fold(5381usize, |h, b| h.wrapping_mul(33).wrapping_add(b as usize));
+    PALETTE[hash % PALETTE.len()]
 }
