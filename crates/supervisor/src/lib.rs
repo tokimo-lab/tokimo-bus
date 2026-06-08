@@ -304,14 +304,17 @@ impl Supervisor {
         #[cfg(target_os = "linux")]
         {
             // SAFETY: pre_exec runs in the child after fork() but before exec().
-            // We only call async-signal-safe operations (prctl + getppid + exit).
+            // We only call async-signal-safe operations (prctl + exit).
+            let parent_pid = nix::unistd::getpid();
             #[allow(unsafe_code)]
             unsafe {
-                cmd.pre_exec(|| {
+                cmd.pre_exec(move || {
                     nix::sys::prctl::set_pdeathsig(nix::sys::signal::Signal::SIGKILL).map_err(std::io::Error::other)?;
                     // Race guard: parent may have died between fork and pre_exec.
-                    // Linux PR_SET_PDEATHSIG only fires on future death; check now.
-                    if nix::unistd::getppid().as_raw() == 1 {
+                    // Compare against the actual parent PID instead of checking == 1,
+                    // because in containers (Docker, LXC) PID 1 is the application
+                    // process, not init — a naive == 1 check would kill every child.
+                    if nix::unistd::getppid() != parent_pid {
                         std::process::exit(0);
                     }
                     Ok(())
