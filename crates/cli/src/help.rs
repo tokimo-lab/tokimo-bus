@@ -45,7 +45,11 @@ pub fn print_help_unified(cmd: &mut clap::Command) {
     let globals: Vec<_> = cmd
         .get_arguments()
         .filter(|a| {
-            a.is_global_set() && !a.is_positional() && a.get_id().as_str() != "help" && a.get_id().as_str() != "version"
+            a.is_global_set()
+                && !a.is_positional()
+                && !a.is_hide_set()
+                && a.get_id().as_str() != "help"
+                && a.get_id().as_str() != "version"
         })
         .collect();
 

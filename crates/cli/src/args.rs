@@ -1,13 +1,18 @@
 use clap::Args;
 
-/// Tokimo CLI 认证参数（API token + 环境变量）。
+/// Tokimo CLI 通用参数。
 ///
-/// CLI 直接连数据库（通过 `DATABASE_URL`），用 token 校验用户身份。
-/// 不依赖主 server HTTP 进程运行。
+/// CLI 直接连数据库（通过 `DATABASE_URL`）校验用户身份，不依赖主 server HTTP 进程运行。
 #[derive(Debug, Clone, Args)]
 pub struct TokimoAuthArgs {
     /// Tokimo API token (mm_xxx). 在主 server 的设置页 → API Keys 创建。
-    #[arg(long = "tokimo-token", env = "TOKIMO_TOKEN", global = true, hide_env_values = true)]
+    #[arg(
+        long = "tokimo-token",
+        env = "TOKIMO_TOKEN",
+        global = true,
+        hide_env_values = true,
+        hide = true
+    )]
     pub token: Option<String>,
 }
 
