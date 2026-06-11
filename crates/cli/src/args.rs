@@ -1,11 +1,12 @@
 use clap::Args;
 
-/// Tokimo CLI 通用参数。
+/// Common CLI authentication parameters.
 ///
-/// CLI 直接连数据库（通过 `DATABASE_URL`）校验用户身份，不依赖主 server HTTP 进程运行。
+/// The CLI connects directly to the database (via `DATABASE_URL`) to verify
+/// user identity; it does not depend on the main server HTTP process.
 #[derive(Debug, Clone, Args)]
 pub struct TokimoAuthArgs {
-    /// Tokimo API token (mm_xxx). 在主 server 的设置页 → API Keys 创建。
+    /// Tokimo API token (mm_xxx). Create one in the main server Settings → API Keys.
     #[arg(
         long = "tokimo-token",
         env = "TOKIMO_TOKEN",
@@ -16,20 +17,20 @@ pub struct TokimoAuthArgs {
     pub token: Option<String>,
 }
 
-/// 认证凭据（解析后的 token）。
+/// Resolved authentication credentials.
 #[derive(Debug, Clone)]
 pub struct Credentials {
-    /// API token（mm_xxx 格式）
+    /// API token (mm_xxx format)
     pub token: String,
 }
 
 impl Credentials {
-    /// 从 CLI 参数解析凭据（校验 token 非空）。
+    /// Parse credentials from CLI args (validates token is non-empty).
     pub fn resolve(args: &TokimoAuthArgs) -> anyhow::Result<Self> {
         let token = args.token.clone().filter(|t| !t.trim().is_empty()).ok_or_else(|| {
             anyhow::anyhow!(
                 "missing --tokimo-token (or TOKIMO_TOKEN env). \
-                     去主 server 设置页 → API Keys 创建一个 mm_xxx token。"
+                     Create one in the main server Settings → API Keys."
             )
         })?;
 
