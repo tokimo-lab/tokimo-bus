@@ -19,3 +19,4 @@ parking_lot         = { workspace = true }
 dashmap             = { workspace = true }
 futures             = { workspace = true }
 async-trait         = { workspace = true }
+uuid                = { workspace = true }

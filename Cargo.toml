@@ -27,6 +27,7 @@ parking_lot    = "0.12"
 dashmap        = "6"
 futures        = "0.3"
 async-trait    = "0.1"
+uuid           = { version = "1", features = ["v4", "serde"] }
 
 tokimo-bus-protocol   = { path = "crates/protocol",   version = "0.1.0" }
 tokimo-bus-client     = { path = "crates/client",     version = "0.1.0" }

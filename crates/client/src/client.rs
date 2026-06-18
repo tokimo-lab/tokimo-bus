@@ -150,6 +150,22 @@ impl BusClient {
         &self.service
     }
 
+    /// 构造 CallerCtx，自动从 task-local 读取 user_id。
+    ///
+    /// 主服务器 proxy 会注入 `x-tokimo-user-id` header，auth_middleware
+    /// 将其存入 task-local，此方法自动读取。app handler 调用此方法即可，
+    /// 无需关心 auth 细节。
+    ///
+    /// 如果不在 HTTP 请求上下文中调用（如 CLI 模式），user_id 为 None。
+    pub fn auto_caller(&self, app_id: &str) -> CallerCtx {
+        CallerCtx {
+            user_id: tokimo_bus_protocol::task_local::current_user_id(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            workspace: None,
+            caller_app_id: Some(app_id.to_string()),
+        }
+    }
+
     /// Invoke another service's method. Future resolves when `Response` is
     /// received.
     pub async fn invoke(

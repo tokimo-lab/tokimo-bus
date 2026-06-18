@@ -10,6 +10,7 @@ axum = ["dep:axum"]
 cli-db = ["dep:sea-orm", "dep:sha2", "dep:hex", "dep:chrono", "dep:uuid", "dep:dotenvy", "dep:tokio"]
 
 [dependencies]
+tokimo-bus-protocol = { workspace = true }
 axum = { version = "0.8", optional = true }
 sea-orm = { version = "2.0.0-rc.38", optional = true, default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls", "with-uuid", "with-chrono", "macros"] }
 sha2 = { version = "0.10", optional = true }

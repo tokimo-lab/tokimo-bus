@@ -28,6 +28,7 @@
 
 pub mod codec;
 pub mod frame;
+pub mod task_local;
 pub mod transport;
 
 #[cfg(feature = "axum")]
