@@ -48,10 +48,7 @@ pub fn set_user_id(user_id: Option<String>) {
 /// 每个 HTTP 请求在独立 tokio task 中执行，task-local 天然隔离，无需加锁。
 /// 请求结束后 scope 自动结束，值被 drop。
 #[cfg(feature = "axum")]
-pub async fn auth_middleware(
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> axum::response::Response {
+pub async fn auth_middleware(req: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
     let user_id = req
         .headers()
         .get("x-tokimo-user-id")
