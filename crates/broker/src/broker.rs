@@ -314,6 +314,10 @@ impl Broker {
     }
 
     /// Like [`Self::call`] but with an explicit timeout.
+    ///
+    /// Pass `Duration::ZERO` to disable the timeout entirely (useful for
+    /// long-running operations like job dispatch where the caller manages
+    /// its own lifecycle).
     pub async fn call_with_timeout(
         self: &Arc<Self>,
         service: &str,
@@ -322,6 +326,8 @@ impl Broker {
         caller: CallerCtx,
         timeout: Duration,
     ) -> Result<Vec<u8>, BusError> {
+        let no_timeout = timeout.is_zero();
+
         // ── 1. Local (in-process) services take precedence ──
         if let Some(handler) = self.local_services.get(service).map(|h| h.clone()) {
             // Validate against method catalog (matches remote-app semantics).
@@ -341,11 +347,15 @@ impl Broker {
                 }
             }
             let fut = handler(method.to_string(), payload, caller);
-            return match tokio::time::timeout(timeout, fut).await {
-                Ok(res) => res,
-                Err(_) => Err(BusError::Timeout {
-                    ms: timeout.as_millis() as u64,
-                }),
+            return if no_timeout {
+                fut.await
+            } else {
+                match tokio::time::timeout(timeout, fut).await {
+                    Ok(res) => res,
+                    Err(_) => Err(BusError::Timeout {
+                        ms: timeout.as_millis() as u64,
+                    }),
+                }
             };
         }
 
@@ -404,14 +414,21 @@ impl Broker {
             .send(frame)
             .map_err(|_| BusError::ServiceNotFound(service.to_string()))?;
 
-        match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(resp)) => resp.result,
-            Ok(Err(_)) => Err(BusError::ConnectionClosed),
-            Err(_) => {
-                handle.pending_out.remove(&req_id);
-                Err(BusError::Timeout {
-                    ms: timeout.as_millis() as u64,
-                })
+        if no_timeout {
+            match rx.await {
+                Ok(resp) => resp.result,
+                Err(_) => Err(BusError::ConnectionClosed),
+            }
+        } else {
+            match tokio::time::timeout(timeout, rx).await {
+                Ok(Ok(resp)) => resp.result,
+                Ok(Err(_)) => Err(BusError::ConnectionClosed),
+                Err(_) => {
+                    handle.pending_out.remove(&req_id);
+                    Err(BusError::Timeout {
+                        ms: timeout.as_millis() as u64,
+                    })
+                }
             }
         }
     }
