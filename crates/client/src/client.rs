@@ -345,11 +345,12 @@ async fn dispatch_invoke(client: Arc<BusClient>, inv: Invoke) {
     let req_id = inv.req_id;
     let result = match handler {
         Some(h) => {
-            let fut = h(InvokeRequest {
+            let req = InvokeRequest {
                 payload: inv.payload,
                 caller: inv.caller,
-            });
-            fut.await
+            };
+            let user_id = req.caller.user_id.clone();
+            tokimo_bus_protocol::task_local::scope_user_id(user_id, h(req)).await
         }
         None => Err(BusError::MethodNotFound {
             service: client.service.clone(),

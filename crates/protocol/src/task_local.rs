@@ -22,7 +22,7 @@
 //! }
 //! ```
 
-use std::cell::RefCell;
+use std::{cell::RefCell, future::Future};
 
 tokio::task_local! {
     static USER_ID: RefCell<Option<String>>;
@@ -43,6 +43,18 @@ pub fn set_user_id(user_id: Option<String>) {
     });
 }
 
+/// Run a future with the given user id in task-local context.
+///
+/// This is used outside Axum request handling, such as bus invoke handlers,
+/// so nested SDK calls can still build authenticated [`CallerCtx`] values via
+/// `BusClient::auto_caller`.
+pub async fn scope_user_id<F>(user_id: Option<String>, fut: F) -> F::Output
+where
+    F: Future,
+{
+    USER_ID.scope(RefCell::new(user_id), fut).await
+}
+
 /// Axum 中间件：从 `x-tokimo-user-id` header 提取 user_id 存入 task-local。
 ///
 /// 每个 HTTP 请求在独立 tokio task 中执行，task-local 天然隔离，无需加锁。
@@ -56,7 +68,5 @@ pub async fn auth_middleware(req: axum::extract::Request, next: axum::middleware
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    USER_ID
-        .scope(RefCell::new(user_id), async { next.run(req).await })
-        .await
+    scope_user_id(user_id, async { next.run(req).await }).await
 }
